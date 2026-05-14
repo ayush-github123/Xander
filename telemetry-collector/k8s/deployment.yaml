@@ -1,0 +1,133 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: telemetry-system
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: telemetry-config
+  namespace: telemetry-system
+data:
+  config.yaml: |
+    discovery_interval: 10s
+    metrics_interval: 5s
+    event_queue_size: 1000
+    event_mode: async
+    graceful_shutdown_timeout: 30s
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: telemetry-collector
+  namespace: telemetry-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: telemetry-collector
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "nodes"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: telemetry-collector
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: telemetry-collector
+subjects:
+  - kind: ServiceAccount
+    name: telemetry-collector
+    namespace: telemetry-system
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: telemetry-collector
+  namespace: telemetry-system
+spec:
+  selector:
+    matchLabels:
+      app: telemetry-collector
+  template:
+    metadata:
+      labels:
+        app: telemetry-collector
+    spec:
+      serviceAccountName: telemetry-collector
+      hostNetwork: true
+      hostPID: true
+      hostIPC: true
+      dnsPolicy: ClusterFirstWithHostNet
+      
+      containers:
+      - name: collector
+        image: telemetry-collector:latest
+        imagePullPolicy: IfNotPresent
+        
+        securityContext:
+          privileged: true
+          capabilities:
+            add:
+              - SYS_ADMIN
+              - SYS_PTRACE
+              - NET_ADMIN
+        
+        env:
+        - name: KUBELET_URL
+          value: "http://127.0.0.1:10250"
+        - name: DISCOVERY_INTERVAL
+          value: "10s"
+        - name: METRICS_INTERVAL
+          value: "5s"
+        
+        volumeMounts:
+        - name: host-root
+          mountPath: /host
+          readOnly: true
+        - name: sys
+          mountPath: /sys
+          readOnly: true
+        - name: proc
+          mountPath: /proc
+          readOnly: true
+        - name: cgroup
+          mountPath: /cgroup
+          readOnly: true
+        
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        
+        livenessProbe:
+          exec:
+            command: ["sh", "-c", "ps aux | grep telemetry-collector"]
+          initialDelaySeconds: 30
+          periodSeconds: 60
+      
+      terminationGracePeriodSeconds: 30
+      
+      volumes:
+      - name: host-root
+        hostPath:
+          path: /
+      - name: sys
+        hostPath:
+          path: /sys
+      - name: proc
+        hostPath:
+          path: /proc
+      - name: cgroup
+        hostPath:
+          path: /sys/fs/cgroup
