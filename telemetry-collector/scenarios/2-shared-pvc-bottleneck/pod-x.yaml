@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-x-writer
+spec:
+  containers:
+  - name: fio-writer
+    image: alpine:latest
+    command: ["/bin/sh", "-c"]
+    args:
+    - |
+      apk update && apk add fio
+      echo "Starting heavy sequential writes..."
+      fio --name=writer --directory=/data --rw=write --bs=1M --size=2G --numjobs=1 --time_based --runtime=3600 --group_reporting
+    volumeMounts:
+    - name: shared-data
+      mountPath: /data
+  volumes:
+  - name: shared-data
+    hostPath:
+      path: /tmp/shared-io-test
+      type: DirectoryOrCreate

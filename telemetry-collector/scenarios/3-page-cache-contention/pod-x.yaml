@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-x-cache-clearer
+spec:
+  containers:
+  - name: cache-clearer
+    image: alpine:latest
+    command: ["/bin/sh", "-c"]
+    args:
+    - |
+      echo "Generating massive 1GB file to flood page cache..."
+      dd if=/dev/urandom of=/tmp/massive_file bs=1M count=1000
+      while true; do
+        echo "Reading massive file to evict other caches..."
+        cat /tmp/massive_file > /dev/null
+        sleep 1
+      done
