@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-x-disk-filler
+spec:
+  containers:
+  - name: filler
+    image: alpine:latest
+    command: ["/bin/sh", "-c"]
+    args:
+    - |
+      echo "Starting safe disk pressure simulation..."
+      echo "We will use 'fallocate' to quickly allocate space without writing to disk (saves SSD wear)."
+      echo "We will stop at 85% usage to avoid completely breaking the local host."
+      
+      mkdir -p /tmp/filler
+      i=0
+      while true; do
+        USAGE=$(df /tmp/filler | awk 'NR==2 {print $5}' | sed 's/%//')
+        if [ "$USAGE" -gt 85 ]; then
+          echo "Disk is at $USAGE%. Pausing to maintain pressure without crashing the node..."
+          sleep 60
+        else
+          # Allocate 1GB instantly using fallocate
+          fallocate -l 1G /tmp/filler/dummy_$i.bin || break
+          echo "Created 1GB file, disk at $USAGE%"
+          i=$((i+1))
+          sleep 1
+        fi
+      done
+      
+      # Keep pod alive if loop breaks
+      sleep infinity

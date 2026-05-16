@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-x-noisy
+  labels:
+    app: noisy-neighbor
+spec:
+  containers:
+  - name: noisy
+    image: busybox
+    command: ["/bin/sh", "-c"]
+    args:
+    - |
+      echo "Starting noisy disk I/O generation (throughput)..."
+      while true; do
+        # Generate heavy write throughput using dd
+        dd if=/dev/zero of=/tmp/test.log bs=1M count=1000 2>/dev/null
+        # Remove the file so we don't accidentally fill the disk (we just want throughput)
+        rm -f /tmp/test.log
+        sleep 1
+      done

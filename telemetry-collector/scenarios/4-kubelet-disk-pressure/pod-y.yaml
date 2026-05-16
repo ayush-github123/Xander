@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-y-critical
+spec:
+  containers:
+  - name: critical-app
+    image: nginx:alpine
+    resources:
+      requests:
+        memory: "64Mi"
+        cpu: "50m"
+      # We intentionally omit limits and 'Guaranteed' QoS.
+      # If DiskPressure is triggered, the kubelet will evict this pod!
