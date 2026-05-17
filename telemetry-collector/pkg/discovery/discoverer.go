@@ -9,15 +9,20 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/ayush-github123/podLen/pkg/models"
 )
 
 type Discoverer struct {
-	kubeletURL string
-	httpClient *http.Client
-	Cache      *PodCache
+	kubeletURL   string
+	apiServerURL string
+	httpClient   *http.Client
+	Cache        *PodCache
+	bearerToken  string
+	nodeName     string
 }
 
 type KubeletPod struct {
@@ -54,18 +59,80 @@ func NewDiscoverer(kubeletURL string) *Discoverer {
 		Timeout: 10 * time.Second,
 	}
 
+	// Read service account token
+	tokenPath := "/var/run/secrets/kubernetes.io/serviceaccount/token"
+	token, err := os.ReadFile(tokenPath)
+	if err != nil {
+		fmt.Printf("Warning: Failed to read service account token: %v\n", err)
+	}
+
+	// Get node name from environment
+	nodeName := os.Getenv("NODE_NAME")
+	if nodeName == "" {
+		nodeName = "localhost"
+	}
+
 	return &Discoverer{
-		kubeletURL: kubeletURL,
-		httpClient: client,
-		Cache:      NewPodCache(),
+		kubeletURL:   kubeletURL,
+		apiServerURL: "https://kubernetes.default.svc",
+		httpClient:   client,
+		Cache:        NewPodCache(),
+		bearerToken:  string(token),
+		nodeName:     nodeName,
 	}
 }
 
 func (d *Discoverer) DiscoverPods(ctx context.Context) ([]*models.Pod, error) {
+	// Try using API server proxy first
+	if d.bearerToken != "" {
+		pods, err := d.discoverPodsViaAPIServer(ctx)
+		if err == nil {
+			return pods, nil
+		}
+		fmt.Printf("API server discovery failed (%v), falling back to direct kubelet access\n", err)
+	}
+
+	// Fallback to direct kubelet access
+	return d.discoverPodsDirectly(ctx)
+}
+
+func (d *Discoverer) discoverPodsViaAPIServer(ctx context.Context) ([]*models.Pod, error) {
+	// URL format: https://kubernetes.default.svc/api/v1/nodes/{node}/proxy/pods
+	url := fmt.Sprintf("%s/api/v1/nodes/%s/proxy/pods", d.apiServerURL, d.nodeName)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	// Add bearer token authentication
+	if d.bearerToken != "" {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", strings.TrimSpace(d.bearerToken)))
+	}
+
+	resp, err := d.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query API server: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("API server returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return d.parsePods(resp.Body)
+}
+
+func (d *Discoverer) discoverPodsDirectly(ctx context.Context) ([]*models.Pod, error) {
 	url := fmt.Sprintf("%s/pods", d.kubeletURL)
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	// Add bearer token authentication
+	if d.bearerToken != "" {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", strings.TrimSpace(d.bearerToken)))
 	}
 
 	resp, err := d.httpClient.Do(req)
@@ -79,8 +146,12 @@ func (d *Discoverer) DiscoverPods(ctx context.Context) ([]*models.Pod, error) {
 		return nil, fmt.Errorf("kubelet returned status %d: %s", resp.StatusCode, string(body))
 	}
 
+	return d.parsePods(resp.Body)
+}
+
+func (d *Discoverer) parsePods(body io.Reader) ([]*models.Pod, error) {
 	var podsResponse KubeletPodsResponse
-	if err := json.NewDecoder(resp.Body).Decode(&podsResponse); err != nil {
+	if err := json.NewDecoder(body).Decode(&podsResponse); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
