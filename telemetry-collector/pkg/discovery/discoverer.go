@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -133,7 +134,10 @@ func (d *Discoverer) discoverPodsDirectly(ctx context.Context) ([]*models.Pod, e
 
 	token, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/token")
 	if err == nil {
-		req.Header.Set("Authorization", "Bearer "+string(token))
+		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(string(token)))
+		log.Printf("DEBUG: Sending request to %s with Auth header length: %d\n", url, len(string(token)))
+	} else {
+		log.Printf("Error reading token: %v\n", err)
 	}
 
 	resp, err := d.httpClient.Do(req)
