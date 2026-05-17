@@ -14,5 +14,5 @@ spec:
     readinessProbe:
       exec:
         command: ["pg_isready", "-U", "postgres"]
-      intervalSeconds: 5
+      periodSeconds: 5
       timeoutSeconds: 2
