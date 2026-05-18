@@ -13,6 +13,7 @@ import (
 	"github.com/ayush-github123/podLen/pkg/events"
 	"github.com/ayush-github123/podLen/pkg/metrics"
 	"github.com/ayush-github123/podLen/pkg/models"
+	"github.com/ayush-github123/podLen/pkg/storage"
 )
 
 func main() {
@@ -51,8 +52,23 @@ func main() {
 	// Initialize emitter
 	emitter := events.NewEmitter(broker)
 
+	// Initialize SQLite metrics store
+	fmt.Println("Initializing SQLite metrics store...")
+	dbPath := os.Getenv("METRICS_DB_PATH")
+	if dbPath == "" {
+		dbPath = "/tmp/metrics.db"
+	}
+	metricsStore, err := storage.NewMetricsStore(dbPath)
+	if err != nil {
+		fmt.Printf("Fatal: Failed to initialize metrics store: %v\n", err)
+		os.Exit(1)
+	}
+	defer metricsStore.Close()
+	fmt.Printf("Metrics store initialized at: %s\n", dbPath)
+
 	// Setup goroutine coordination
 	var wg sync.WaitGroup
+	metricsCollectionChannel := make(chan *models.Metrics, 100)
 	metricsChannel := make(chan *models.Metrics, 100)
 
 	// Start discovery goroutine
@@ -70,8 +86,34 @@ func main() {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		if err := collector.Run(ctx, cfg.MetricsInterval, metricsChannel); err != nil && err != context.Canceled {
+		if err := collector.Run(ctx, cfg.MetricsInterval, metricsCollectionChannel); err != nil && err != context.Canceled {
 			fmt.Printf("Collection loop error: %v\n", err)
+		}
+	}()
+
+	// Start metrics processor goroutine (saves to DB and forwards to emitter)
+	fmt.Println("Starting metrics processor...")
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case m := <-metricsCollectionChannel:
+				if m != nil {
+					// Save to database
+					if err := metricsStore.SaveMetrics(m); err != nil {
+						fmt.Printf("Error saving metrics to database: %v\n", err)
+					}
+					// Forward to emitter
+					select {
+					case metricsChannel <- m:
+					case <-ctx.Done():
+						return
+					}
+				}
+			}
 		}
 	}()
 
@@ -144,7 +186,8 @@ func main() {
 	// Signal all goroutines to stop
 	cancel()
 
-	// Close the metrics channel
+	// Close the metrics channels
+	close(metricsCollectionChannel)
 	close(metricsChannel)
 
 	// Wait for all goroutines with timeout
