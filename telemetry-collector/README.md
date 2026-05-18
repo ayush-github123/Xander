@@ -6,6 +6,7 @@ A production-grade Kubernetes node collector that discovers pods/containers via 
 
 - **Pod Discovery**: Queries kubelet API on localhost:10250 for pod discovery
 - **Metrics Collection**: Collects CPU, memory, disk I/O, network, and process metrics
+- **SQLite Storage**: Persists metrics to SQLite database for historical analysis
 - **Hybrid Collection**: Periodic sampling + event-driven pod lifecycle tracking
 - **Cgroup Support**: Automatic detection and support for both cgroup v1 and v2
 - **Event Emission**: Internal buffered channels for metrics snapshots and deltas
@@ -40,6 +41,8 @@ telemetry-collector/
 │   ├── events/
 │   │   ├── broker.go                # Event channel management
 │   │   └── emitter.go               # Event emission
+│   ├── storage/
+│   │   └── db.go                    # SQLite metrics persistence
 │   └── logger/
 │       └── log.go                   # Structured logging
 └── internal/
@@ -73,6 +76,8 @@ Configuration is loaded from environment variables with sensible defaults:
 
 ## Running
 
+### Local Execution
+
 ```bash
 ./collector
 ```
@@ -80,9 +85,55 @@ Configuration is loaded from environment variables with sensible defaults:
 The collector will:
 1. Discover pods via kubelet API
 2. Map pods to containers and cgroup paths
-3. Collect metrics at regular intervals
-4. Emit events to subscribers
+3. Collect metrics and save to SQLite database at `/tmp/metrics.db`
+4. Emit events to stdout
 5. Handle graceful shutdown on SIGTERM/SIGINT
+
+### Kubernetes Deployment (KIND Cluster)
+
+Build Docker image:
+```bash
+make docker-build
+```
+
+Deploy to KIND cluster:
+```bash
+make deploy-kind
+```
+
+View logs:
+```bash
+make logs-kind
+```
+
+### Query Metrics from Database
+
+Copy database locally:
+```bash
+POD_NAME=$(kubectl get pods -n telemetry-system -o jsonpath='{.items[0].metadata.name}')
+kubectl cp telemetry-system/$POD_NAME:/tmp/metrics.db ./metrics.db
+sqlite3 ./metrics.db "SELECT COUNT(*) FROM metrics;"
+```
+
+Common queries:
+```bash
+# Total metrics collected
+sqlite3 ./metrics.db "SELECT COUNT(*) FROM metrics;"
+
+# Unique pods tracked
+sqlite3 ./metrics.db "SELECT DISTINCT pod_namespace, pod_name FROM metrics;"
+
+# Memory usage for specific pod
+sqlite3 ./metrics.db "SELECT timestamp, memory_rss, memory_working_set FROM metrics WHERE pod_name='pod-x-noisy' ORDER BY timestamp DESC LIMIT 10;"
+
+# Metrics within time range
+sqlite3 ./metrics.db "SELECT COUNT(*) FROM metrics WHERE timestamp > datetime('now', '-1 hour');"
+```
+
+Cleanup:
+```bash
+make delete-kind
+```
 
 ## Concurrency Architecture
 
