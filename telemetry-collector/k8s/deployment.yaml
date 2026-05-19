@@ -106,7 +106,7 @@ spec:
           mountPath: /proc
           readOnly: true
         - name: cgroup
-          mountPath: /cgroup
+          mountPath: /sys/fs/cgroup
           readOnly: true
         
         resources:
