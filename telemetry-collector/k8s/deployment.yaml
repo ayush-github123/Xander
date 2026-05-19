@@ -28,7 +28,7 @@ metadata:
   name: telemetry-collector
 rules:
   - apiGroups: [""]
-    resources: ["pods", "nodes"]
+    resources: ["pods", "nodes", "nodes/proxy", "nodes/stats", "nodes/metrics"]
     verbs: ["get", "list", "watch"]
   - apiGroups: [""]
     resources: ["pods/log"]
