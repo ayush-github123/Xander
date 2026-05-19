@@ -28,7 +28,7 @@ metadata:
   name: telemetry-collector
 rules:
   - apiGroups: [""]
-    resources: ["pods", "nodes"]
+    resources: ["pods", "nodes", "nodes/proxy", "nodes/stats", "nodes/metrics"]
     verbs: ["get", "list", "watch"]
   - apiGroups: [""]
     resources: ["pods/log"]
@@ -106,7 +106,7 @@ spec:
           mountPath: /proc
           readOnly: true
         - name: cgroup
-          mountPath: /cgroup
+          mountPath: /sys/fs/cgroup
           readOnly: true
         
         resources:
