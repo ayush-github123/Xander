@@ -131,14 +131,15 @@ func (r *CgroupV2Reader) readDiskIOMetrics(cgroupPath string) (models.DiskIOMetr
 			}
 
 			for i := 1; i < len(parts); i++ {
-				if parts[i] == "rbytes" && i+1 < len(parts) {
-					val, _ := strconv.ParseUint(parts[i+1], 10, 64)
-					metrics.ReadBytes += val
-					i++
-				} else if parts[i] == "wbytes" && i+1 < len(parts) {
-					val, _ := strconv.ParseUint(parts[i+1], 10, 64)
-					metrics.WriteBytes += val
-					i++
+				kv := strings.Split(parts[i], "=")
+				if len(kv) == 2 {
+					if kv[0] == "rbytes" {
+						val, _ := strconv.ParseUint(kv[1], 10, 64)
+						metrics.ReadBytes += val
+					} else if kv[0] == "wbytes" {
+						val, _ := strconv.ParseUint(kv[1], 10, 64)
+						metrics.WriteBytes += val
+					}
 				}
 			}
 		}

@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -130,9 +131,9 @@ func (d *Discoverer) discoverPodsDirectly(ctx context.Context) ([]*models.Pod, e
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	// Add bearer token authentication
-	if d.bearerToken != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", strings.TrimSpace(d.bearerToken)))
+	token, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/token")
+	if err == nil {
+		req.Header.Set("Authorization", "Bearer "+string(token))
 	}
 
 	resp, err := d.httpClient.Do(req)
@@ -172,7 +173,7 @@ func (d *Discoverer) parsePods(body io.Reader) ([]*models.Pod, error) {
 			}
 
 			containerID := extractContainerID(containerStatus.ContainerID)
-			container.CgroupID = containerID
+			container.CgroupID = findCgroupPath(containerID)
 
 			pod.Containers = append(pod.Containers, container)
 		}
@@ -220,4 +221,17 @@ func extractContainerID(fullID string) string {
 		return string(parts[1])
 	}
 	return fullID
+}
+
+func findCgroupPath(containerID string) string {
+	if containerID == "" {
+		return ""
+	}
+	cmd := exec.Command("find", "/sys/fs/cgroup", "-name", "*"+containerID+"*", "-type", "d")
+	out, _ := cmd.Output()
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	if len(lines) > 0 && lines[0] != "" {
+		return strings.TrimPrefix(lines[0], "/sys/fs/cgroup/")
+	}
+	return containerID
 }
