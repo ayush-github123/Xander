@@ -89,21 +89,21 @@ The collector will:
 4. Emit events to stdout
 5. Handle graceful shutdown on SIGTERM/SIGINT
 
-### Kubernetes Deployment (KIND Cluster)
+### Kubernetes Deployment (K3 Cluster)
 
 Build Docker image:
 ```bash
 make docker-build
 ```
 
-Deploy to KIND cluster:
+Deploy to a local k3s cluster through k3d:
 ```bash
-make deploy-kind
+make deploy-k3
 ```
 
 View logs:
 ```bash
-make logs-kind
+make logs-k3
 ```
 
 ### Query Metrics from Database
@@ -132,7 +132,7 @@ sqlite3 ./metrics.db "SELECT COUNT(*) FROM metrics WHERE timestamp > datetime('n
 
 Cleanup:
 ```bash
-make delete-kind
+make delete-k3
 ```
 
 ## Concurrency Architecture

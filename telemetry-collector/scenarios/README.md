@@ -2,7 +2,7 @@
 
 This directory contains four separate scenarios that demonstrate different ways one pod can starve or negatively impact another pod through hidden disk/storage dependencies on a single-node cluster.
 
-These scenarios are designed to be run locally (e.g., using `kind`) and include safeguards to ensure they do not permanently damage your local machine's disk or cause catastrophic SSD wear.
+These scenarios are designed to be run locally (e.g., using k3s through `k3d`) and include safeguards to ensure they do not permanently damage your local machine's disk or cause catastrophic SSD wear.
 
 ## Scenarios
 
