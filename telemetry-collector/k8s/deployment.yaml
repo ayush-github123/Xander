@@ -119,7 +119,7 @@ spec:
         
         livenessProbe:
           exec:
-            command: ["sh", "-c", "ps aux | grep telemetry-collector"]
+            command: ["sh", "-c", "test -r /proc/1/comm"]
           initialDelaySeconds: 30
           periodSeconds: 60
       

@@ -26,30 +26,31 @@ go tool cover -html=coverage.out
 
 ---
 
-## Kind Cluster Testing
+## K3 Cluster Testing
 
-### Setup Kind
+### Setup K3
 
 ```bash
-# Create a kind cluster (if not already done)
-kind create cluster --name kind
+# Create a local k3s cluster with k3d (if not already done)
+k3d cluster create xander --agents 1 --wait
 
 # Verify cluster is running
+kubectl config use-context k3d-xander
 kubectl cluster-info
 kubectl get nodes
 ```
 
-### Deploy to Kind
+### Deploy to K3
 
 ```bash
 make docker-build
 
-make deploy-kind
+make deploy-k3
 
 kubectl get pods -n telemetry-system
 kubectl get ds -n telemetry-system
 
-make logs-kind
+make logs-k3
 ```
 
 ---
@@ -75,9 +76,9 @@ Your collector should detect and emit events for these metrics.
 - [ ] Local run works: `make run`
 - [ ] Tests pass: `make test`
 - [ ] Docker image builds: `make docker-build`
-- [ ] Deploys to kind: `make deploy-kind`
+- [ ] Deploys to k3: `make deploy-k3`
 - [ ] Pod is running: `kubectl get pods -n telemetry-system`
-- [ ] Logs show pod discovery working: `make logs-kind`
+- [ ] Logs show pod discovery working: `make logs-k3`
 - [ ] Can subscribe to events without errors
 - [ ] Graceful shutdown works: `kubectl delete -f k8s/`
 
@@ -107,12 +108,12 @@ kubectl exec -it <collector-pod> -n telemetry-system -- \
 ## Cleanup
 
 ```bash
-# Delete kind deployment
-make delete-kind
+# Delete k3 deployment
+make delete-k3
 
 # Delete test namespace (if created)
 kubectl delete namespace test-scenarios --ignore-not-found
 
-# Delete entire kind cluster (if needed)
-kind delete cluster --name kind
+# Delete entire k3d cluster (if needed)
+make delete-k3-cluster
 ```

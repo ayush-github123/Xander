@@ -1,4 +1,4 @@
-.PHONY: build run clean test help docker-build docker-push deploy-kind logs-kind
+.PHONY: build run clean test help docker-build docker-push ensure-k3 deploy-k3 logs-k3 delete-k3 delete-k3-cluster fmt lint vet mod-tidy deps
 
 BINARY_NAME=telemetry-collector
 DOCKER_IMAGE=telemetry-collector:latest
@@ -7,6 +7,8 @@ GOFLAGS=-v
 MAIN_PATH=./cmd/collector/main.go
 OUTPUT_DIR=./bin
 KUBECONFIG?=~/.kube/config
+K3_CLUSTER_NAME?=xander
+K3_CONTEXT?=k3d-$(K3_CLUSTER_NAME)
 
 RED=\033[0;31m
 GREEN=\033[0;32m
@@ -22,12 +24,14 @@ help:
 	@echo "  make test           - Run all tests"
 	@echo "  make clean          - Clean build artifacts"
 	@echo ""
-	@echo "$(YELLOW)Docker & Kind Targets:$(NC)"
+	@echo "$(YELLOW)Docker & K3 Targets:$(NC)"
 	@echo "  make docker-build   - Build Docker image"
 	@echo "  make docker-push    - Push Docker image to registry"
-	@echo "  make deploy-kind    - Deploy to kind cluster"
-	@echo "  make logs-kind      - Stream pod logs from kind cluster"
-	@echo "  make delete-kind    - Delete deployment from kind cluster"
+	@echo "  make ensure-k3      - Create/use a local k3s cluster via k3d"
+	@echo "  make deploy-k3      - Deploy to the k3 cluster"
+	@echo "  make logs-k3        - Stream pod logs from the k3 cluster"
+	@echo "  make delete-k3      - Delete deployment from the k3 cluster"
+	@echo "  make delete-k3-cluster - Delete the local k3d cluster"
 	@echo ""
 
 
@@ -67,24 +71,39 @@ docker-push:
 	@docker push $(DOCKER_IMAGE)
 	@echo "$(GREEN)[SUCCESS]$(NC) Image pushed"
 
-deploy-kind:
-	@echo "$(GREEN)[KIND]$(NC) Loading image into kind cluster..."
-	@kind load docker-image $(DOCKER_IMAGE) --name kind 2>/dev/null || true
-	@echo "$(GREEN)[KIND]$(NC) Applying Kubernetes manifests..."
+ensure-k3:
+	@command -v k3d >/dev/null 2>&1 || { echo "$(RED)[ERROR]$(NC) k3d is required for local k3s clusters"; exit 1; }
+	@command -v kubectl >/dev/null 2>&1 || { echo "$(RED)[ERROR]$(NC) kubectl is required"; exit 1; }
+	@if ! k3d cluster get $(K3_CLUSTER_NAME) >/dev/null 2>&1; then \
+		echo "$(GREEN)[K3]$(NC) Creating k3s cluster '$(K3_CLUSTER_NAME)' with k3d..."; \
+		k3d cluster create $(K3_CLUSTER_NAME) --agents 1 --wait; \
+	else \
+		echo "$(GREEN)[K3]$(NC) Using existing k3d cluster '$(K3_CLUSTER_NAME)'"; \
+	fi
+	@kubectl config use-context $(K3_CONTEXT) >/dev/null
+
+deploy-k3: ensure-k3
+	@echo "$(GREEN)[K3]$(NC) Importing image into k3d cluster..."
+	@k3d image import $(DOCKER_IMAGE) --cluster $(K3_CLUSTER_NAME)
+	@echo "$(GREEN)[K3]$(NC) Applying Kubernetes manifests..."
 	@kubectl apply -f ./k8s/
-	@echo "$(GREEN)[SUCCESS]$(NC) Deployed to kind cluster"
+	@echo "$(GREEN)[SUCCESS]$(NC) Deployed to k3 cluster"
 	@sleep 2
 	@kubectl get pods -n telemetry-system
 
-logs-kind:
-	@echo "$(GREEN)[KIND]$(NC) Streaming logs from telemetry-collector..."
+logs-k3:
+	@echo "$(GREEN)[K3]$(NC) Streaming logs from telemetry-collector..."
 	@kubectl logs -n telemetry-system -l app=telemetry-collector -f
 
-delete-kind:
-	@echo "$(GREEN)[KIND]$(NC) Deleting from kind cluster..."
+delete-k3:
+	@echo "$(GREEN)[K3]$(NC) Deleting from k3 cluster..."
 	@kubectl delete -f ./k8s/ --ignore-not-found
-	@echo "$(GREEN)[SUCCESS]$(NC) Deleted from kind cluster"
+	@echo "$(GREEN)[SUCCESS]$(NC) Deleted from k3 cluster"
 
+delete-k3-cluster:
+	@echo "$(GREEN)[K3]$(NC) Deleting k3d cluster '$(K3_CLUSTER_NAME)'..."
+	@k3d cluster delete $(K3_CLUSTER_NAME)
+	@echo "$(GREEN)[SUCCESS]$(NC) Deleted k3d cluster"
 
 fmt:
 	@echo "$(GREEN)[FMT]$(NC) Running gofmt..."
