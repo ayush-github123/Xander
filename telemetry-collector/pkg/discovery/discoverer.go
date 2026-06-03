@@ -231,11 +231,36 @@ func findCgroupPath(containerID string) string {
 	if containerID == "" {
 		return ""
 	}
-	cmd := exec.Command("find", "/sys/fs/cgroup", "-name", "*"+containerID+"*", "-type", "d")
-	out, _ := cmd.Output()
-	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-	if len(lines) > 0 && lines[0] != "" {
-		return strings.TrimPrefix(lines[0], "/sys/fs/cgroup/")
+
+	// Truncate containerID to handle docker IDs that are 64 chars
+	shortID := containerID
+	if len(containerID) > 12 {
+		shortID = containerID[:12]
 	}
-	return containerID
+
+	// Try find command with timeout for finding container paths
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	// Search for cgroup paths containing the container ID
+	cmd := exec.CommandContext(ctx, "find", "/sys/fs/cgroup", "-type", "d", "-name", "*"+shortID+"*")
+	out, err := cmd.Output()
+	if err == nil {
+		lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+		if len(lines) > 0 && lines[0] != "" {
+			// Prefer paths with .scope suffix (cgroup v2 container scopes)
+			for _, line := range lines {
+				if strings.Contains(line, ".scope") && strings.Contains(line, "cri-containerd") {
+					path := strings.TrimPrefix(line, "/sys/fs/cgroup/")
+					return path
+				}
+			}
+			// Otherwise use first match
+			path := strings.TrimPrefix(lines[0], "/sys/fs/cgroup/")
+			return path
+		}
+	}
+
+	// Return short ID as fallback so it's not empty
+	return shortID
 }
