@@ -6,98 +6,55 @@ import (
 	"flag"
 	"log"
 	"net/http"
-	"os"
 	"strconv"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 )
 
-const (
-	defaultDBPath = "../telemetry-collector/metrics.db"
-	defaultAddr   = ":8081"
-)
-
 func main() {
-	dbPath := flag.String("db", envOrDefault("TELEMETRY_DB_PATH", defaultDBPath), "Path to metrics SQLite DB")
-	addr := flag.String("addr", envOrDefault("TELEMETRY_API_ADDR", defaultAddr), "listen address")
+	dbPath := flag.String("db", "../telemetry-collector/metrics.db", "Path to metrics SQLite DB")
+	addr := flag.String("addr", ":8081", "listen address")
 	flag.Parse()
 
-	db, err := openDatabase(*dbPath)
+	db, err := sql.Open("sqlite3", *dbPath+"?_busy_timeout=5000&mode=ro")
 	if err != nil {
-		log.Fatalf("failed to open metrics db: %v", err)
+		log.Fatalf("failed to open db: %v", err)
 	}
 	defer db.Close()
 
-	mux := newMux(db)
-
-	server := &http.Server{
-		Addr:              *addr,
-		Handler:           mux,
-		ReadHeaderTimeout: 5 * time.Second,
-	}
-
-	log.Printf("telemetry-api listening on %s (db=%s)", *addr, *dbPath)
-	log.Fatal(server.ListenAndServe())
-}
-
-func envOrDefault(key, fallback string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return fallback
-}
-
-func openDatabase(dbPath string) (*sql.DB, error) {
-	db, err := sql.Open("sqlite3", dbPath+"?_busy_timeout=5000&mode=ro")
-	if err != nil {
-		return nil, err
-	}
-	if err := db.Ping(); err != nil {
-		db.Close()
-		return nil, err
-	}
-	return db, nil
-}
-
-func newMux(db *sql.DB) *http.ServeMux {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		if err := db.Ping(); err != nil {
-			http.Error(w, err.Error(), http.StatusServiceUnavailable)
-			return
-		}
-		writeJSON(w, map[string]string{"status": "ok"})
-	})
-	mux.HandleFunc("/top-risk", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/top-risk", func(w http.ResponseWriter, r *http.Request) {
 		topRiskHandler(w, r, db)
 	})
-	mux.HandleFunc("/incidents", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/incidents", func(w http.ResponseWriter, r *http.Request) {
 		incidentsHandler(w, r, db)
 	})
-	mux.HandleFunc("/cluster-summary", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/cluster-summary", func(w http.ResponseWriter, r *http.Request) {
 		clusterSummaryHandler(w, r, db)
 	})
-	return mux
+
+	log.Printf("telemetry-api listening on %s (db=%s)", *addr, *dbPath)
+	log.Fatal(http.ListenAndServe(*addr, nil))
 }
 
 func topRiskHandler(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	q := r.URL.Query()
-	windowSec := queryInt(q.Get("window"), 60)
-	limit := queryInt(q.Get("limit"), 10)
-	start := recentStart(windowSec)
-
+	windowSec := 60
+	limit := 10
+	if v := q.Get("window"); v != "" {
+		if t, err := strconv.Atoi(v); err == nil {
+			windowSec = t
+		}
+	}
+	if v := q.Get("limit"); v != "" {
+		if t, err := strconv.Atoi(v); err == nil {
+			limit = t
+		}
+	}
+	start := time.Now().Add(time.Duration(-windowSec) * time.Second).Format("2006-01-02 15:04:05")
 	// Use CPU user+system as a proxy for CPU activity
-	sqlq := `SELECT
-		pod_namespace,
-		pod_name,
-		COALESCE(AVG(COALESCE(cpu_user_time, 0) + COALESCE(cpu_system_time, 0)), 0) AS cpu_avg,
-		COALESCE(AVG(COALESCE(memory_rss, 0)), 0) AS mem_avg
-	FROM metrics
-	WHERE datetime(timestamp) >= datetime(?)
-	GROUP BY pod_namespace, pod_name
-	ORDER BY cpu_avg DESC
-	LIMIT ?;`
+	sqlq := `SELECT pod_namespace, pod_name, AVG(COALESCE(cpu_user_time,0)+COALESCE(cpu_system_time,0)) as cpu_avg, AVG(COALESCE(memory_rss,0)) as mem_avg
+        FROM metrics WHERE timestamp >= ? GROUP BY pod_namespace, pod_name ORDER BY cpu_avg DESC LIMIT ?;`
 	rows, err := db.Query(sqlq, start, limit)
 	if err != nil {
 		http.Error(w, err.Error(), 500)
@@ -119,31 +76,15 @@ func topRiskHandler(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		}
 		out = append(out, r1)
 	}
-	if err := rows.Err(); err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
 	writeJSON(w, out)
 }
 
 func incidentsHandler(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	// Compare 1m vs 5m averages and report spikes
-	start1 := recentStart(60)
-	start5 := recentStart(300)
-	sql1 := `SELECT
-		pod_namespace,
-		pod_name,
-		COALESCE(AVG(COALESCE(cpu_user_time, 0) + COALESCE(cpu_system_time, 0)), 0) AS cpu_1m
-	FROM metrics
-	WHERE datetime(timestamp) >= datetime(?)
-	GROUP BY pod_namespace, pod_name`
-	sql5 := `SELECT
-		pod_namespace,
-		pod_name,
-		COALESCE(AVG(COALESCE(cpu_user_time, 0) + COALESCE(cpu_system_time, 0)), 0) AS cpu_5m
-	FROM metrics
-	WHERE datetime(timestamp) >= datetime(?)
-	GROUP BY pod_namespace, pod_name`
+	start1 := time.Now().Add(-60 * time.Second).Format("2006-01-02 15:04:05")
+	start5 := time.Now().Add(-300 * time.Second).Format("2006-01-02 15:04:05")
+	sql1 := `SELECT pod_namespace, pod_name, AVG(COALESCE(cpu_user_time,0)+COALESCE(cpu_system_time,0)) as cpu_1m FROM metrics WHERE timestamp >= ? GROUP BY pod_namespace, pod_name`
+	sql5 := `SELECT pod_namespace, pod_name, AVG(COALESCE(cpu_user_time,0)+COALESCE(cpu_system_time,0)) as cpu_5m FROM metrics WHERE timestamp >= ? GROUP BY pod_namespace, pod_name`
 	m1 := map[string]float64{}
 	rows1, err := db.Query(sql1, start1)
 	if err != nil {
@@ -153,17 +94,10 @@ func incidentsHandler(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	for rows1.Next() {
 		var ns, pod string
 		var cpu float64
-		if err := rows1.Scan(&ns, &pod, &cpu); err != nil {
-			rows1.Close()
-			http.Error(w, err.Error(), 500)
-			return
-		}
+		rows1.Scan(&ns, &pod, &cpu)
 		m1[ns+"/"+pod] = cpu
 	}
-	if err := rows1.Close(); err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
+	rows1.Close()
 	m5 := map[string]float64{}
 	rows5, err := db.Query(sql5, start5)
 	if err != nil {
@@ -173,17 +107,10 @@ func incidentsHandler(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	for rows5.Next() {
 		var ns, pod string
 		var cpu float64
-		if err := rows5.Scan(&ns, &pod, &cpu); err != nil {
-			rows5.Close()
-			http.Error(w, err.Error(), 500)
-			return
-		}
+		rows5.Scan(&ns, &pod, &cpu)
 		m5[ns+"/"+pod] = cpu
 	}
-	if err := rows5.Close(); err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
+	rows5.Close()
 	type Issue struct {
 		Pod     string  `json:"pod"`
 		Symptom string  `json:"symptom"`
@@ -206,13 +133,8 @@ func incidentsHandler(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 
 func clusterSummaryHandler(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	// Return basic counts and averages across recent 5 minutes
-	start := recentStart(300)
-	q := `SELECT
-		COUNT(*),
-		COALESCE(AVG(COALESCE(cpu_user_time, 0) + COALESCE(cpu_system_time, 0)), 0),
-		COALESCE(AVG(COALESCE(memory_rss, 0)), 0)
-	FROM metrics
-	WHERE datetime(timestamp) >= datetime(?)`
+	start := time.Now().Add(-300 * time.Second).Format("2006-01-02 15:04:05")
+	q := `SELECT COUNT(*), AVG(COALESCE(cpu_user_time,0)+COALESCE(cpu_system_time,0)), AVG(COALESCE(memory_rss,0)) FROM metrics WHERE timestamp >= ?`
 	var cnt int
 	var cpuAvg, memAvg float64
 	if err := db.QueryRow(q, start).Scan(&cnt, &cpuAvg, &memAvg); err != nil {
@@ -220,9 +142,7 @@ func clusterSummaryHandler(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		return
 	}
 	// unique pods
-	q2 := `SELECT COUNT(DISTINCT pod_namespace || '/' || pod_name)
-	FROM metrics
-	WHERE datetime(timestamp) >= datetime(?)`
+	q2 := `SELECT COUNT(DISTINCT pod_namespace || '/' || pod_name) FROM metrics WHERE timestamp >= ?`
 	var pods int
 	if err := db.QueryRow(q2, start).Scan(&pods); err != nil {
 		http.Error(w, err.Error(), 500)
@@ -231,26 +151,9 @@ func clusterSummaryHandler(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	writeJSON(w, map[string]interface{}{"rows": cnt, "unique_pods": pods, "cpu_avg": cpuAvg, "mem_avg": memAvg})
 }
 
-func queryInt(value string, fallback int) int {
-	if value == "" {
-		return fallback
-	}
-	parsed, err := strconv.Atoi(value)
-	if err != nil || parsed <= 0 {
-		return fallback
-	}
-	return parsed
-}
-
-func recentStart(windowSec int) string {
-	return time.Now().Add(time.Duration(-windowSec) * time.Second).UTC().Format(time.RFC3339)
-}
-
 func writeJSON(w http.ResponseWriter, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
-	if err := enc.Encode(v); err != nil {
-		log.Printf("failed to write JSON response: %v", err)
-	}
+	enc.Encode(v)
 }
