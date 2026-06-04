@@ -40,9 +40,14 @@ func (c *Collector) CollectMetrics(ctx context.Context) ([]*models.Metrics, erro
 
 	for _, pod := range pods {
 		for _, container := range pod.Containers {
+			// Skip containers without IDs (system containers, etc.)
+			if container.ID == "" || container.CgroupID == "" {
+				continue
+			}
+
 			metrics, err := c.collectContainerMetrics(ctx, pod, container)
 			if err != nil {
-				fmt.Printf("Error collecting metrics for container %s: %v\n", container.ID, err)
+				fmt.Printf("Error collecting metrics for %s/%s (%s): %v\n", pod.Namespace, pod.Name, container.Name, err)
 				continue
 			}
 

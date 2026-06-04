@@ -56,6 +56,9 @@ func (r *CgroupV2Reader) ReadMetrics(ctx context.Context, cgroupPath string) (*m
 	diskMetrics, _ := r.readDiskIOMetrics(cgroupPath)
 	metrics.DiskIO = diskMetrics
 
+	networkMetrics, _ := r.readNetworkMetrics(cgroupPath)
+	metrics.Network = networkMetrics
+
 	procMetrics, _ := r.readProcessMetrics(cgroupPath)
 	metrics.Process = procMetrics
 
@@ -159,4 +162,8 @@ func (r *CgroupV2Reader) readProcessMetrics(cgroupPath string) (models.ProcessMe
 	}
 
 	return metrics, nil
+}
+
+func (r *CgroupV2Reader) readNetworkMetrics(cgroupPath string) (models.NetworkMetrics, error) {
+	return readNetworkMetricsFromCgroup(filepath.Join(r.basePath, cgroupPath, "cgroup.procs"))
 }
