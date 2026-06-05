@@ -19,7 +19,7 @@ A production-grade Kubernetes node collector that discovers pods/containers via 
 telemetry-collector/
 ├── go.mod                           # Go module file
 ├── go.sum                           # Dependency lock file
-├── collector                        # Compiled binary
+├── collector                        # Compiled binary(when built)
 ├── cmd/
 │   └── collector/
 │       └── main.go                  # Entry point, signal handling
