@@ -57,9 +57,8 @@ type RawMetric struct {
 
 // GetRawMetrics retrieves raw metrics for a container within a time window
 func (ra *RollingAggregator) GetRawMetrics(containerID, podName, podNamespace, containerName string, windowStart, windowEnd time.Time) ([]RawMetric, error) {
-	// Format times as ISO strings to match the TEXT timestamps in DB
-	startStr := windowStart.Format("2006-01-02T15:04:05")
-	endStr := windowEnd.Format("2006-01-02T15:04:05")
+	startStr := windowStart.UTC().Format(time.RFC3339Nano)
+	endStr := windowEnd.UTC().Format(time.RFC3339Nano)
 
 	query := `
 SELECT 
@@ -72,7 +71,7 @@ network_tx_bytes, network_tx_packets, network_tx_errors, network_tx_dropped,
 process_count, process_file_descriptors
 FROM metrics
 WHERE container_id = ? AND pod_name = ? AND pod_namespace = ? AND container_name = ?
-AND timestamp >= ? AND timestamp < ?
+AND datetime(timestamp) >= datetime(?) AND datetime(timestamp) < datetime(?)
 ORDER BY timestamp ASC
 `
 
