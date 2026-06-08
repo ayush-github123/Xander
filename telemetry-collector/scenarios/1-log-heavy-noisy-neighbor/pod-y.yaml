@@ -4,6 +4,8 @@ metadata:
   name: pod-y-db
   labels:
     app: critical-db
+    xander.io/scenario: log-heavy-noisy-neighbor
+    xander.io/role: victim
 spec:
   containers:
   - name: postgres
@@ -16,3 +18,26 @@ spec:
         command: ["pg_isready", "-U", "postgres"]
       periodSeconds: 5
       timeoutSeconds: 2
+  - name: db-load
+    image: postgres:15-alpine
+    env:
+    - name: PGPASSWORD
+      value: "secret"
+    command: ["/bin/sh", "-c"]
+    args:
+    - |
+      set -eu
+      until pg_isready -h 127.0.0.1 -U postgres; do
+        sleep 1
+      done
+
+      psql -h 127.0.0.1 -U postgres -d postgres -c \
+        "CREATE TABLE IF NOT EXISTS scenario1_load (ts timestamptz DEFAULT now(), payload text);"
+
+      while true; do
+        psql -h 127.0.0.1 -U postgres -d postgres -c \
+          "INSERT INTO scenario1_load(payload) SELECT md5(random()::text) FROM generate_series(1, 1000); DELETE FROM scenario1_load WHERE ts < now() - interval '5 minutes';" >/dev/null
+        psql -h 127.0.0.1 -U postgres -d postgres -c \
+          "SELECT count(*) FROM scenario1_load;" >/dev/null
+        sleep 1
+      done

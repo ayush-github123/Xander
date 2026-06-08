@@ -4,6 +4,8 @@ metadata:
   name: pod-x-noisy
   labels:
     app: noisy-neighbor
+    xander.io/scenario: log-heavy-noisy-neighbor
+    xander.io/role: source
 spec:
   containers:
   - name: noisy
@@ -11,11 +13,26 @@ spec:
     command: ["/bin/sh", "-c"]
     args:
     - |
-      echo "Starting noisy disk I/O generation (throughput)..."
+      set -eu
+      touch /tmp/noisy-ready
+      echo "Starting noisy disk I/O generation (forced writeback)..."
       while true; do
-        # Generate heavy write throughput using dd
-        dd if=/dev/zero of=/tmp/test.log bs=1M count=1000 2>/dev/null
-        # Remove the file so we don't accidentally fill the disk (we just want throughput)
-        rm -f /tmp/test.log
+        # Write a bounded file and sync it so cgroup io.stat sees real disk writeback.
+        dd if=/dev/zero of=/work/noisy-write.bin bs=1M count=128 2>/dev/null
+        sync
+        rm -f /work/noisy-write.bin
+        sync
         sleep 1
       done
+    readinessProbe:
+      exec:
+        command: ["test", "-f", "/tmp/noisy-ready"]
+      periodSeconds: 5
+      timeoutSeconds: 2
+    volumeMounts:
+    - name: noisy-work
+      mountPath: /work
+  volumes:
+  - name: noisy-work
+    emptyDir:
+      sizeLimit: 512Mi

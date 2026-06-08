@@ -76,7 +76,7 @@ ensure-k3:
 	@command -v kubectl >/dev/null 2>&1 || { echo "$(RED)[ERROR]$(NC) kubectl is required"; exit 1; }
 	@if ! k3d cluster get $(K3_CLUSTER_NAME) >/dev/null 2>&1; then \
 		echo "$(GREEN)[K3]$(NC) Creating k3s cluster '$(K3_CLUSTER_NAME)' with k3d..."; \
-		k3d cluster create $(K3_CLUSTER_NAME) --agents 1 --wait; \
+		k3d cluster create $(K3_CLUSTER_NAME) --wait; \
 	else \
 		echo "$(GREEN)[K3]$(NC) Using existing k3d cluster '$(K3_CLUSTER_NAME)'"; \
 	fi
