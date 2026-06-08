@@ -48,6 +48,25 @@ SCENARIOS = {
     "Scenario 4: kubelet disk pressure": ["pod-x-disk-filler", "pod-y-critical"],
 }
 
+SCENARIO_SIGNAL_CHECKS = {
+    "Scenario 1: log-heavy noisy neighbor": [
+        ("pod-x-noisy", "disk_write_max_mib_s", 1.0, "`pod-x-noisy` is present, but disk write throughput is low."),
+        ("pod-y-db", "processes", 1.0, "`pod-y-db` is present, but database process signals are weak."),
+    ],
+    "Scenario 2: shared PVC bottleneck": [
+        ("pod-x-writer", "disk_write_max_mib_s", 1.0, "`pod-x-writer` is present, but writer disk throughput is low."),
+        ("pod-y-reader", "disk_read_max_mib_s", 0.1, "`pod-y-reader` is present, but reader disk throughput is low."),
+    ],
+    "Scenario 3: page cache contention": [
+        ("pod-x-cache-clearer", "disk_read_max_mib_s", 1.0, "`pod-x-cache-clearer` is present, but cache-churn read throughput is low."),
+        ("pod-y-web", "net_tx_max_kib_s", 1.0, "`pod-y-web` is present, but web serving traffic is low."),
+    ],
+    "Scenario 4: kubelet disk pressure": [
+        ("pod-x-disk-filler", "processes", 1.0, "`pod-x-disk-filler` is present, but filler process signals are weak."),
+        ("pod-y-critical", "processes", 1.0, "`pod-y-critical` is present, but victim process signals are weak."),
+    ],
+}
+
 DB_PATH = "telemetry.db"
 BYTES_PER_KIB = 1024
 BYTES_PER_MIB = 1024 * 1024
@@ -375,12 +394,22 @@ def render_scenario_check(df, scenario_name, expected_pods):
     if not summary.empty:
         st.dataframe(summary, hide_index=True)
 
-        if "pod-x-noisy" in expected_pods:
-            noisy = summary[summary["pod_name"] == "pod-x-noisy"]
-            if not noisy.empty and float(noisy.iloc[0]["disk_write_max_mib_s"]) < 1.0:
+        for pod_name, metric, threshold, warning in SCENARIO_SIGNAL_CHECKS.get(scenario_name, []):
+            pod_summary = summary[summary["pod_name"] == pod_name]
+            if not pod_summary.empty and metric in pod_summary.columns:
+                value = float(pod_summary.iloc[0][metric] or 0)
+                if value < threshold:
+                    st.warning(
+                        warning
+                        + " Redeploy the scenario with the updated manifest and wait for fresh samples."
+                    )
+
+        if scenario_name == "Scenario 4: kubelet disk pressure":
+            filler = summary[summary["pod_name"] == "pod-x-disk-filler"]
+            if not filler.empty and float(filler.iloc[0].get("disk_write_max_mib_s", 0) or 0) < 0.1:
                 st.warning(
-                    "`pod-x-noisy` is present, but disk write throughput is low. "
-                    "Redeploy scenario 1 with the updated manifest and wait for fresh samples."
+                    "This metrics view can show the disk-filler pod, but node DiskPressure itself "
+                    "must be confirmed with `kubectl describe node` while the scenario is running."
                 )
 
 
