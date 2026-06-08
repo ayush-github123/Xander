@@ -1,6 +1,6 @@
 # Xander — Pod starvation discovery and dependency mapping
 
-Xander is a local Kubernetes telemetry demo for spotting pod resource pressure and hidden dependencies. It collects container metrics from a local k3s/kind cluster, stores them in SQLite, builds rolling aggregates, and exposes a small HTTP API and a Streamlit UI for quick investigation.
+Xander is a local Kubernetes telemetry demo for spotting pod resource pressure and hidden dependencies. It collects container metrics from a local k3s cluster, stores them in SQLite, builds rolling aggregates, and exposes a small HTTP API and a Streamlit UI for quick investigation.
 
 ## Components
 
@@ -14,20 +14,23 @@ Xander is a local Kubernetes telemetry demo for spotting pod resource pressure a
 
 - Go 1.21+
 - Python 3.8+
-- Docker
-- `kubectl` and a local Kubernetes provider (`kind` or `k3d`)
+- Docker, used by `k3d` and for local collector image builds
+- `kubectl`
+- `k3d` for the local k3s cluster
 - `sqlite3` (for manual inspection)
 
 ## Quickstart (recommended)
 
-The easiest way to get a working local environment is to use the included bootstrap script which will install Python deps into a virtualenv, download Go modules, create a local kind cluster, and deploy the collector.
+The easiest way to get a working local environment is the root Makefile:
 
 ```bash
 cd /path/to/xander
-./start-proj.sh
+make up
 ```
 
-When the script finishes it prints how to run the Streamlit UI locally. Typical next steps:
+This installs Python deps into a virtualenv, downloads Go modules, creates or reuses a single-node `k3d` cluster, deploys the noisy-neighbor scenario, and deploys the collector.
+
+Typical next steps:
 
 ```bash
 source .venv/bin/activate
@@ -35,6 +38,12 @@ streamlit run streamlit_app.py
 ```
 
 Open the Streamlit UI and, in the sidebar, point it at `/tmp/collector-metrics.db` (or the path you copied from the collector pod).
+
+To sanity-check that the scenario is producing pod metrics:
+
+```bash
+make verify-scenario
+```
 
 ## Manual: run components locally
 
@@ -45,10 +54,7 @@ These sections describe how to run each component individually for development a
 ```bash
 cd telemetry-collector
 make docker-build
-# load into kind and deploy
-kind load docker-image telemetry-collector:latest --name <cluster-name>
-kubectl apply -f k8s/deployment.yaml
-kubectl rollout status daemonset/telemetry-collector -n telemetry-system
+make deploy-k3
 ```
 
 - Copy the metrics DB from the collector pod for local use:
@@ -111,11 +117,12 @@ The sidebar lets you point the UI at a local `metrics.db` file and toggle live c
 ## Troubleshooting & Tips
 
 - If Docker is not reachable, ensure it is running and that your user has permission to access the daemon.
-- If `kind` is missing, `start-proj.sh` will prompt you to install it — you can also use `k3d` if preferred (modify scripts accordingly).
+- If `k3d` is missing, install it first and rerun `make up`.
 - The collector stores the live DB inside the pod at `/tmp/metrics.db`. Copy it out for local analysis.
+- `make sync-db` merges collector DBs if a multi-node cluster already exists.
 
 ## Contributing
 
 Contributions are welcome. 
 
-For development, the `start-proj.sh` script sets up most of the local dependencies and provides a quick path to get the collector running in a local cluster.
+For development, use `make up`, `make down`, and `make clean` from the repo root.
