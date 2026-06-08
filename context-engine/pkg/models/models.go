@@ -204,14 +204,30 @@ type WorkloadStat struct {
 	Description string  `json:"description"`
 }
 
+// ScenarioDetection captures rule-based recognition of the demo scenarios.
+type ScenarioDetection struct {
+	ScenarioID         string             `json:"scenario_id"`
+	Name               string             `json:"name"`
+	Detected           bool               `json:"detected"`
+	Confidence         float64            `json:"confidence"`
+	Severity           string             `json:"severity"`
+	SourcePods         []string           `json:"source_pods"`
+	VictimPods         []string           `json:"victim_pods"`
+	MissingPods        []string           `json:"missing_pods,omitempty"`
+	Evidence           []string           `json:"evidence"`
+	Signals            map[string]float64 `json:"signals,omitempty"`
+	RecommendedActions []string           `json:"recommended_actions,omitempty"`
+}
+
 // GlobalContext represents system-wide incident-centric context
 type GlobalContext struct {
-	Timestamp         string                      `json:"timestamp"`
-	TotalContainers   int                         `json:"total_containers"`
-	ContainersAtRisk  int                         `json:"containers_at_risk"`
-	CriticalAnomalies int                         `json:"critical_anomalies"`
-	Containers        map[string]ContainerContext `json:"containers"`
-	ClusterStats      ClusterWorkloadStats        `json:"cluster_stats"`
-	SystemWideTrends  map[string]interface{}      `json:"system_wide_trends"`
-	Recommendations   []string                    `json:"recommendations"`
+	Timestamp          string                      `json:"timestamp"`
+	TotalContainers    int                         `json:"total_containers"`
+	ContainersAtRisk   int                         `json:"containers_at_risk"`
+	CriticalAnomalies  int                         `json:"critical_anomalies"`
+	Containers         map[string]ContainerContext `json:"containers"`
+	ClusterStats       ClusterWorkloadStats        `json:"cluster_stats"`
+	SystemWideTrends   map[string]interface{}      `json:"system_wide_trends"`
+	ScenarioDetections []ScenarioDetection         `json:"scenario_detections,omitempty"`
+	Recommendations    []string                    `json:"recommendations"`
 }
