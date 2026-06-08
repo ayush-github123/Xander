@@ -51,10 +51,10 @@ func topRiskHandler(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 			limit = t
 		}
 	}
-	start := time.Now().Add(time.Duration(-windowSec) * time.Second).Format("2006-01-02 15:04:05")
+	start := time.Now().UTC().Add(time.Duration(-windowSec) * time.Second).Format(time.RFC3339Nano)
 	// Use CPU user+system as a proxy for CPU activity
 	sqlq := `SELECT pod_namespace, pod_name, AVG(COALESCE(cpu_user_time,0)+COALESCE(cpu_system_time,0)) as cpu_avg, AVG(COALESCE(memory_rss,0)) as mem_avg
-        FROM metrics WHERE timestamp >= ? GROUP BY pod_namespace, pod_name ORDER BY cpu_avg DESC LIMIT ?;`
+        FROM metrics WHERE datetime(timestamp) >= datetime(?) GROUP BY pod_namespace, pod_name ORDER BY cpu_avg DESC LIMIT ?;`
 	rows, err := db.Query(sqlq, start, limit)
 	if err != nil {
 		http.Error(w, err.Error(), 500)
@@ -81,10 +81,10 @@ func topRiskHandler(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 
 func incidentsHandler(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	// Compare 1m vs 5m averages and report spikes
-	start1 := time.Now().Add(-60 * time.Second).Format("2006-01-02 15:04:05")
-	start5 := time.Now().Add(-300 * time.Second).Format("2006-01-02 15:04:05")
-	sql1 := `SELECT pod_namespace, pod_name, AVG(COALESCE(cpu_user_time,0)+COALESCE(cpu_system_time,0)) as cpu_1m FROM metrics WHERE timestamp >= ? GROUP BY pod_namespace, pod_name`
-	sql5 := `SELECT pod_namespace, pod_name, AVG(COALESCE(cpu_user_time,0)+COALESCE(cpu_system_time,0)) as cpu_5m FROM metrics WHERE timestamp >= ? GROUP BY pod_namespace, pod_name`
+	start1 := time.Now().UTC().Add(-60 * time.Second).Format(time.RFC3339Nano)
+	start5 := time.Now().UTC().Add(-300 * time.Second).Format(time.RFC3339Nano)
+	sql1 := `SELECT pod_namespace, pod_name, AVG(COALESCE(cpu_user_time,0)+COALESCE(cpu_system_time,0)) as cpu_1m FROM metrics WHERE datetime(timestamp) >= datetime(?) GROUP BY pod_namespace, pod_name`
+	sql5 := `SELECT pod_namespace, pod_name, AVG(COALESCE(cpu_user_time,0)+COALESCE(cpu_system_time,0)) as cpu_5m FROM metrics WHERE datetime(timestamp) >= datetime(?) GROUP BY pod_namespace, pod_name`
 	m1 := map[string]float64{}
 	rows1, err := db.Query(sql1, start1)
 	if err != nil {
@@ -133,8 +133,8 @@ func incidentsHandler(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 
 func clusterSummaryHandler(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	// Return basic counts and averages across recent 5 minutes
-	start := time.Now().Add(-300 * time.Second).Format("2006-01-02 15:04:05")
-	q := `SELECT COUNT(*), AVG(COALESCE(cpu_user_time,0)+COALESCE(cpu_system_time,0)), AVG(COALESCE(memory_rss,0)) FROM metrics WHERE timestamp >= ?`
+	start := time.Now().UTC().Add(-300 * time.Second).Format(time.RFC3339Nano)
+	q := `SELECT COUNT(*), AVG(COALESCE(cpu_user_time,0)+COALESCE(cpu_system_time,0)), AVG(COALESCE(memory_rss,0)) FROM metrics WHERE datetime(timestamp) >= datetime(?)`
 	var cnt int
 	var cpuAvg, memAvg float64
 	if err := db.QueryRow(q, start).Scan(&cnt, &cpuAvg, &memAvg); err != nil {
@@ -142,7 +142,7 @@ func clusterSummaryHandler(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		return
 	}
 	// unique pods
-	q2 := `SELECT COUNT(DISTINCT pod_namespace || '/' || pod_name) FROM metrics WHERE timestamp >= ?`
+	q2 := `SELECT COUNT(DISTINCT pod_namespace || '/' || pod_name) FROM metrics WHERE datetime(timestamp) >= datetime(?)`
 	var pods int
 	if err := db.QueryRow(q2, start).Scan(&pods); err != nil {
 		http.Error(w, err.Error(), 500)
