@@ -39,6 +39,15 @@ WINDOW_LABELS = {
     86400: "24 hours",
 }
 
+SYSTEM_NAMESPACES = {"kube-system", "kube-public", "kube-node-lease", "telemetry-system"}
+
+SCENARIOS = {
+    "Scenario 1: log-heavy noisy neighbor": ["pod-x-noisy", "pod-y-db"],
+    "Scenario 2: shared PVC bottleneck": ["pod-x-writer", "pod-y-reader"],
+    "Scenario 3: page cache contention": ["pod-x-cache-clearer", "pod-y-web"],
+    "Scenario 4: kubelet disk pressure": ["pod-x-disk-filler", "pod-y-critical"],
+}
+
 DB_PATH = "telemetry.db"
 BYTES_PER_KIB = 1024
 BYTES_PER_MIB = 1024 * 1024
@@ -274,6 +283,11 @@ def freshest_db(candidates):
 
 
 def sync_collector_db(path="/tmp/collector-metrics.db"):
+    script_path = os.path.join(os.path.dirname(__file__), "scripts", "sync-collector-db.sh")
+    if os.path.exists(script_path):
+        subprocess.check_call(["bash", script_path, path], timeout=60)
+        return path
+
     pod_cmd = ["kubectl", "get", "pod", "-n", "telemetry-system", "-l", "app=telemetry-collector", "-o", "jsonpath={.items[0].metadata.name}"]
     pod = subprocess.check_output(pod_cmd, text=True, timeout=10).strip()
     subprocess.check_call(["kubectl", "cp", f"telemetry-system/{pod}:/tmp/metrics.db", path], timeout=20)
@@ -305,7 +319,72 @@ def refresh_collector_snapshot(path, interval):
     sync_collector_db(path)
 
 
-def render_telemetry_dashboard(db_path, window_seconds, interval, running):
+def filter_system_pods(df, show_system_pods):
+    if show_system_pods or df.empty or "pod_namespace" not in df.columns:
+        return df
+    filtered = df[~df["pod_namespace"].isin(SYSTEM_NAMESPACES)].copy()
+    return filtered if not filtered.empty else df
+
+
+def scenario_signal_summary(df, expected_pods):
+    if df.empty:
+        return pd.DataFrame()
+    scenario_df = df[df["pod_name"].isin(expected_pods)].copy()
+    if scenario_df.empty:
+        return pd.DataFrame()
+
+    summary = scenario_df.groupby("pod_name").agg(
+        samples=("id", "count"),
+        latest_sample=("timestamp", "max"),
+        cpu_max=("cpu_cores", "max"),
+        disk_read_max_mib_s=("disk_read_mib_s", "max"),
+        disk_write_max_mib_s=("disk_write_mib_s", "max"),
+        disk_write_mean_mib_s=("disk_write_mib_s", "mean"),
+        net_tx_max_kib_s=("net_tx_kib_s", "max"),
+        processes=("process_count", "max"),
+    ).reset_index()
+
+    return summary.round({
+        "cpu_max": 3,
+        "disk_read_max_mib_s": 3,
+        "disk_write_max_mib_s": 3,
+        "disk_write_mean_mib_s": 3,
+        "net_tx_max_kib_s": 2,
+        "processes": 1,
+    })
+
+
+def render_scenario_check(df, scenario_name, expected_pods):
+    st.markdown(f"**{scenario_name} check**")
+    if df.empty:
+        st.info("No recent metrics to check scenario pods yet.")
+        return
+
+    observed = set(df["pod_name"].dropna())
+    missing = [pod for pod in expected_pods if pod not in observed]
+    if missing:
+        st.warning(
+            "Missing expected scenario pod(s) in recent metrics: "
+            + ", ".join(missing)
+            + ". Check `kubectl get pods` and collector logs before trusting this run."
+        )
+    else:
+        st.success("Expected scenario pods are present in recent metrics.")
+
+    summary = scenario_signal_summary(df, expected_pods)
+    if not summary.empty:
+        st.dataframe(summary, hide_index=True)
+
+        if "pod-x-noisy" in expected_pods:
+            noisy = summary[summary["pod_name"] == "pod-x-noisy"]
+            if not noisy.empty and float(noisy.iloc[0]["disk_write_max_mib_s"]) < 1.0:
+                st.warning(
+                    "`pod-x-noisy` is present, but disk write throughput is low. "
+                    "Redeploy scenario 1 with the updated manifest and wait for fresh samples."
+                )
+
+
+def render_telemetry_dashboard(db_path, window_seconds, interval, running, scenario_name, expected_pods, show_system_pods):
     if running:
         try:
             refresh_collector_snapshot(db_path, interval)
@@ -315,14 +394,16 @@ def render_telemetry_dashboard(db_path, window_seconds, interval, running):
     conn = ensure_db_conn(db_path)
     row_count, latest_raw, latest_dt = get_db_status(conn)
     df = fetch_metrics_df(conn, since_seconds=window_seconds)
+    visible_df = filter_system_pods(df, show_system_pods)
 
     col1, col2 = st.columns([2, 1])
 
     with col1:
         st.subheader("Telemetry charts")
-        pods = ["All"] + sorted(df["pod_name"].dropna().unique().tolist()) if not df.empty else ["All"]
+        render_scenario_check(df, scenario_name, expected_pods)
+        pods = ["All"] + sorted(visible_df["pod_name"].dropna().unique().tolist()) if not visible_df.empty else ["All"]
         pod_sel = st.selectbox("Pod to view", pods)
-        plot_df = df.copy()
+        plot_df = visible_df.copy()
         if pod_sel != "All":
             plot_df = plot_df[plot_df["pod_name"] == pod_sel]
 
@@ -397,8 +478,8 @@ def render_telemetry_dashboard(db_path, window_seconds, interval, running):
 
     with col2:
         st.subheader("Aggregation")
-        df_1m = fetch_metrics_df(conn, since_seconds=60)
-        df_5m = fetch_metrics_df(conn, since_seconds=300)
+        df_1m = filter_system_pods(fetch_metrics_df(conn, since_seconds=60), show_system_pods)
+        df_5m = filter_system_pods(fetch_metrics_df(conn, since_seconds=300), show_system_pods)
         agg_1m = aggregate(df_1m)
         agg_5m = aggregate(df_5m)
         st.markdown("**1 minute aggregates**")
@@ -562,6 +643,9 @@ def main():
         index=2,
         format_func=WINDOW_LABELS.get,
     )
+    scenario_name = st.sidebar.selectbox("Scenario check", options=list(SCENARIOS), index=0)
+    expected_pods = SCENARIOS[scenario_name]
+    show_system_pods = st.sidebar.checkbox("Show system pods", value=False)
     st.sidebar.markdown("---")
     st.sidebar.header("Database")
     default_choice = freshest_db(DEFAULT_DB_CANDIDATES)
@@ -617,9 +701,9 @@ def main():
 
     if live_charts and running:
         live_dashboard = st.fragment(run_every=f"{max(interval, 1)}s")(render_telemetry_dashboard)
-        live_dashboard(db_path, window_seconds, interval, running)
+        live_dashboard(db_path, window_seconds, interval, running, scenario_name, expected_pods, show_system_pods)
     else:
-        render_telemetry_dashboard(db_path, window_seconds, interval, running)
+        render_telemetry_dashboard(db_path, window_seconds, interval, running, scenario_name, expected_pods, show_system_pods)
 
     st.markdown("---")
     st.caption("This single-file demo simulates telemetry collection, runs lightweight aggregation and context analysis, and exposes a small rule-based agent to answer queries using that context.")

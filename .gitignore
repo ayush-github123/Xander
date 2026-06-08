@@ -20,6 +20,7 @@ go.work
 
 # Dependency directories
 vendor/
+.venv/
 
 # Go mod download cache
 go.sum.lock

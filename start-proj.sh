@@ -2,8 +2,11 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-KIND_CLUSTER="${KIND_CLUSTER:-kind}"
+K3_CLUSTER_NAME="${K3_CLUSTER_NAME:-xander}"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
+SCENARIO_DIR="${SCENARIO_DIR:-telemetry-collector/scenarios/1-log-heavy-noisy-neighbor}"
+SCENARIO_NAMESPACE="${SCENARIO_NAMESPACE:-default}"
+SCENARIO_PODS="${SCENARIO_PODS:-pod-x-noisy pod-y-db}"
 
 log() {
   printf '\n==> %s\n' "$1"
@@ -15,7 +18,7 @@ has_cmd() {
 
 install_system_deps() {
   local missing=()
-  for cmd in "$PYTHON_BIN" pip go docker kubectl kind sqlite3; do
+  for cmd in "$PYTHON_BIN" pip go docker kubectl k3d sqlite3; do
     if ! has_cmd "$cmd"; then
       missing+=("$cmd")
     fi
@@ -27,16 +30,36 @@ install_system_deps() {
 
   log "Missing commands: ${missing[*]}"
   if has_cmd pacman; then
-    sudo pacman -S --needed python python-pip go docker kubectl kind sqlite
+    sudo pacman -S --needed python python-pip go docker kubectl k3d sqlite
   elif has_cmd apt-get; then
-    sudo apt-get update
-    sudo apt-get install -y python3 python3-pip python3-venv golang-go docker.io kubectl sqlite3
-    if ! has_cmd kind; then
-      echo "kind is not available from this apt setup. Install it from https://kind.sigs.k8s.io/docs/user/quick-start/"
+    local apt_packages=()
+    for cmd in "${missing[@]}"; do
+      case "$cmd" in
+        "$PYTHON_BIN") apt_packages+=(python3) ;;
+        pip) apt_packages+=(python3-pip python3-venv) ;;
+        go) apt_packages+=(golang-go) ;;
+        docker) apt_packages+=(docker.io) ;;
+        sqlite3) apt_packages+=(sqlite3) ;;
+      esac
+    done
+
+    if [ "${#apt_packages[@]}" -gt 0 ]; then
+      sudo apt-get update
+      sudo apt-get install -y "${apt_packages[@]}"
+    fi
+
+    if ! has_cmd kubectl; then
+      echo "kubectl is not available from this apt setup. Install it from https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/"
+      exit 1
+    fi
+
+    if ! has_cmd k3d; then
+      echo "k3d is required for the local k3s cluster. Install it from https://k3d.io/"
       exit 1
     fi
   else
-    echo "Install these first: Python 3, pip, Go, Docker, kubectl, kind, sqlite3"
+    echo "Install these first: Python 3, pip, Go, Docker, kubectl, k3d, sqlite3"
+    echo "Docker is required because this local workflow runs k3s through k3d and builds the collector image locally."
     exit 1
   fi
 }
@@ -52,7 +75,8 @@ ensure_docker_running() {
   fi
 
   if ! docker info >/dev/null 2>&1; then
-    echo "Docker is not reachable. Start Docker and rerun this script."
+    echo "Docker is not reachable. k3d needs Docker to run the local k3s cluster."
+    echo "Start Docker and rerun this script."
     exit 1
   fi
 }
@@ -79,20 +103,31 @@ download_go_modules() {
   done
 }
 
-ensure_kind_cluster() {
-  log "Checking kind cluster"
-  if ! kind get clusters | grep -qx "$KIND_CLUSTER"; then
-    kind create cluster --name "$KIND_CLUSTER"
+ensure_k3_cluster() {
+  log "Checking k3d cluster"
+  if ! k3d cluster get "$K3_CLUSTER_NAME" >/dev/null 2>&1; then
+    k3d cluster create "$K3_CLUSTER_NAME" --wait
   fi
+  kubectl config use-context "k3d-${K3_CLUSTER_NAME}" >/dev/null
   kubectl cluster-info >/dev/null
+}
+
+deploy_scenario() {
+  log "Deploying scenario: $SCENARIO_DIR"
+  kubectl create namespace "$SCENARIO_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+  kubectl delete -n "$SCENARIO_NAMESPACE" -f "$ROOT_DIR/$SCENARIO_DIR" --ignore-not-found
+  kubectl apply -n "$SCENARIO_NAMESPACE" -f "$ROOT_DIR/$SCENARIO_DIR"
+
+  log "Waiting for scenario pods"
+  for pod in $SCENARIO_PODS; do
+    kubectl wait --for=condition=Ready "pod/$pod" -n "$SCENARIO_NAMESPACE" --timeout=180s
+  done
 }
 
 deploy_collector() {
   log "Building and deploying telemetry collector"
-  cd "$ROOT_DIR/telemetry-collector"
-  docker build -t telemetry-collector:latest -f Dockerfile .
-  kind load docker-image telemetry-collector:latest --name "$KIND_CLUSTER"
-  kubectl apply -f k8s/deployment.yaml
+  make -C "$ROOT_DIR/telemetry-collector" docker-build
+  make -C "$ROOT_DIR/telemetry-collector" deploy-k3 K3_CLUSTER_NAME="$K3_CLUSTER_NAME"
   kubectl rollout status daemonset/telemetry-collector -n telemetry-system --timeout=120s
 }
 
@@ -101,7 +136,8 @@ main() {
   ensure_docker_running
   setup_python_env
   download_go_modules
-  ensure_kind_cluster
+  ensure_k3_cluster
+  deploy_scenario
   deploy_collector
 
   log "Project is ready"
@@ -112,7 +148,15 @@ Run Streamlit with:
   source .venv/bin/activate
   streamlit run streamlit_app.py
 
-In the sidebar, use /tmp/collector-metrics.db and keep Live charts enabled.
+Copy the collector DB locally with:
+
+  make sync-db
+
+In the sidebar, use telemetry-collector/metrics.db and keep Live charts enabled.
+
+Scenario pods are running in namespace $SCENARIO_NAMESPACE:
+
+  kubectl get pods -n "$SCENARIO_NAMESPACE" $SCENARIO_PODS
 EOF
 }
 

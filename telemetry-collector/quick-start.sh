@@ -42,7 +42,7 @@ ensure_k3_cluster() {
         echo -e "${GREEN}✓ k3d cluster exists${NC}"
     else
         echo -e "${YELLOW}Creating k3d cluster '${K3_CLUSTER_NAME}'...${NC}"
-        k3d cluster create "$K3_CLUSTER_NAME" --agents 1 --wait
+        k3d cluster create "$K3_CLUSTER_NAME" --wait
         echo -e "${GREEN}✓ k3d cluster created${NC}"
     fi
 
