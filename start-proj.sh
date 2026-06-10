@@ -4,9 +4,10 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 K3_CLUSTER_NAME="${K3_CLUSTER_NAME:-xander}"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
-SCENARIO_DIR="${SCENARIO_DIR:-telemetry-collector/scenarios/1-log-heavy-noisy-neighbor}"
+SCENARIO="${SCENARIO:-1}"
+SCENARIO_DIR="${SCENARIO_DIR:-}"
 SCENARIO_NAMESPACE="${SCENARIO_NAMESPACE:-default}"
-SCENARIO_PODS="${SCENARIO_PODS:-pod-x-noisy pod-y-db}"
+SCENARIO_PODS="${SCENARIO_PODS:-}"
 
 log() {
   printf '\n==> %s\n' "$1"
@@ -14,6 +15,35 @@ log() {
 
 has_cmd() {
   command -v "$1" >/dev/null 2>&1
+}
+
+configure_scenario() {
+  if [ -n "$SCENARIO_DIR" ] && [ -n "$SCENARIO_PODS" ]; then
+    return
+  fi
+
+  case "$SCENARIO" in
+    1)
+      SCENARIO_DIR="telemetry-collector/scenarios/1-log-heavy-noisy-neighbor"
+      SCENARIO_PODS="pod-x-noisy pod-y-db"
+      ;;
+    2)
+      SCENARIO_DIR="telemetry-collector/scenarios/2-shared-pvc-bottleneck"
+      SCENARIO_PODS="pod-x-writer pod-y-reader"
+      ;;
+    3)
+      SCENARIO_DIR="telemetry-collector/scenarios/3-page-cache-contention"
+      SCENARIO_PODS="pod-x-cache-clearer pod-y-web"
+      ;;
+    4)
+      SCENARIO_DIR="telemetry-collector/scenarios/4-kubelet-disk-pressure"
+      SCENARIO_PODS="pod-x-disk-filler pod-y-critical"
+      ;;
+    *)
+      echo "SCENARIO must be 1, 2, 3, or 4"
+      exit 1
+      ;;
+  esac
 }
 
 install_system_deps() {
@@ -132,6 +162,7 @@ deploy_collector() {
 }
 
 main() {
+  configure_scenario
   install_system_deps
   ensure_docker_running
   setup_python_env

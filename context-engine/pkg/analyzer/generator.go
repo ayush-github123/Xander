@@ -150,6 +150,9 @@ func (cg *ContextGenerator) GenerateContext(aggregates map[string]interface{}) *
 	// Generate system-wide trends
 	cg.generateSystemWideTrends(globalCtx, allContainers)
 
+	// Detect the built-in demo scenarios from pod-level telemetry signals.
+	globalCtx.ScenarioDetections = cg.detectScenarios(allContainers)
+
 	// Generate global recommendations (deduplicated and cluster-aware)
 	cg.generateGlobalRecommendations(globalCtx, allContainers)
 
@@ -633,6 +636,19 @@ func (cg *ContextGenerator) generateGlobalRecommendations(globalCtx *models.Glob
 		}
 	}
 
+	for _, detection := range globalCtx.ScenarioDetections {
+		var rec string
+		if len(detection.MissingPods) > 0 {
+			rec = fmt.Sprintf("%s is missing expected pod(s): %s", detection.Name, joinStrings(detection.MissingPods, ", "))
+		} else if detection.Detected {
+			rec = fmt.Sprintf("%s detected with %.0f%% confidence", detection.Name, detection.Confidence*100)
+		}
+		if rec != "" && !seen[rec] {
+			recommendations = append(recommendations, rec)
+			seen[rec] = true
+		}
+	}
+
 	globalCtx.Recommendations = recommendations
 }
 
@@ -666,6 +682,7 @@ func (cg *ContextGenerator) CompactContext(ctx *models.GlobalContext) *models.Gl
 		Containers:        make(map[string]models.ContainerContext),
 		ClusterStats:      cg.compactClusterStats(ctx.ClusterStats),
 		SystemWideTrends:  ctx.SystemWideTrends,
+		ScenarioDetections: ctx.ScenarioDetections,
 		Recommendations:   ctx.Recommendations,
 	}
 

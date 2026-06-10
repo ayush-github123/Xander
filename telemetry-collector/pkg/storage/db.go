@@ -267,10 +267,14 @@ func (ms *MetricsStore) GetMetricsTimeRange(startTime, endTime time.Time) ([]*mo
 		network_tx_bytes, network_tx_packets, network_tx_errors, network_tx_dropped,
 		process_count, process_file_descriptors, process_max_file_descriptors
 	FROM metrics
-	WHERE timestamp BETWEEN ? AND ?
+	WHERE datetime(timestamp) BETWEEN datetime(?) AND datetime(?)
 	ORDER BY timestamp DESC`
 
-	rows, err := ms.db.Query(query, startTime, endTime)
+	rows, err := ms.db.Query(
+		query,
+		startTime.UTC().Format(time.RFC3339Nano),
+		endTime.UTC().Format(time.RFC3339Nano),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query metrics: %w", err)
 	}

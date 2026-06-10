@@ -144,9 +144,6 @@ func (sc *StatCalculator) BaselineDeviation() float64 {
 	if len(sc.values) == 0 {
 		return 0
 	}
-	if sc.values[0] == 0 {
-		return 0
-	}
 	return sc.values[len(sc.values)-1] - sc.values[0]
 }
 

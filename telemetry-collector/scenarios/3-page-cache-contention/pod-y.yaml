@@ -2,6 +2,10 @@ apiVersion: v1
 kind: Pod
 metadata:
   name: pod-y-web
+  labels:
+    app: cache-victim-web
+    xander.io/scenario: page-cache-contention
+    xander.io/role: victim
 spec:
   containers:
   - name: nginx
@@ -9,10 +13,31 @@ spec:
     command: ["/bin/sh", "-c"]
     args:
     - |
+      set -eu
       echo "Generating static content for web server..."
-      # Create some 10MB dummy files
       for i in $(seq 1 10); do
-        dd if=/dev/urandom of=/usr/share/nginx/html/file_$i.bin bs=1M count=10
+        dd if=/dev/zero of=/usr/share/nginx/html/file_$i.bin bs=1M count=5
       done
       echo "Starting nginx..."
       nginx -g 'daemon off;'
+    readinessProbe:
+      httpGet:
+        path: /file_1.bin
+        port: 80
+      periodSeconds: 5
+      timeoutSeconds: 2
+  - name: web-load
+    image: busybox
+    command: ["/bin/sh", "-c"]
+    args:
+    - |
+      set -eu
+      until wget -q -O /dev/null http://127.0.0.1/file_1.bin; do
+        sleep 1
+      done
+      i=1
+      while true; do
+        wget -q -O /dev/null "http://127.0.0.1/file_${i}.bin" || true
+        i=$((i % 10 + 1))
+        sleep 1
+      done

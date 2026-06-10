@@ -1,15 +1,34 @@
 .PHONY: help up down clean status logs sync-db verify-scenario api ui aggregates context test
 
 K3_CLUSTER_NAME?=xander
-SCENARIO_DIR?=telemetry-collector/scenarios/1-log-heavy-noisy-neighbor
+SCENARIO?=1
 SCENARIO_NAMESPACE?=default
-SCENARIO_PODS?=pod-x-noisy pod-y-db
 DB?=telemetry-collector/metrics.db
+
+ifeq ($(SCENARIO),1)
+DEFAULT_SCENARIO_DIR=telemetry-collector/scenarios/1-log-heavy-noisy-neighbor
+DEFAULT_SCENARIO_PODS=pod-x-noisy pod-y-db
+else ifeq ($(SCENARIO),2)
+DEFAULT_SCENARIO_DIR=telemetry-collector/scenarios/2-shared-pvc-bottleneck
+DEFAULT_SCENARIO_PODS=pod-x-writer pod-y-reader
+else ifeq ($(SCENARIO),3)
+DEFAULT_SCENARIO_DIR=telemetry-collector/scenarios/3-page-cache-contention
+DEFAULT_SCENARIO_PODS=pod-x-cache-clearer pod-y-web
+else ifeq ($(SCENARIO),4)
+DEFAULT_SCENARIO_DIR=telemetry-collector/scenarios/4-kubelet-disk-pressure
+DEFAULT_SCENARIO_PODS=pod-x-disk-filler pod-y-critical
+else
+$(error SCENARIO must be 1, 2, 3, or 4)
+endif
+
+SCENARIO_DIR?=$(DEFAULT_SCENARIO_DIR)
+SCENARIO_PODS?=$(DEFAULT_SCENARIO_PODS)
 
 help:
 	@echo "Xander targets:"
 	@echo ""
 	@echo "  make up        - Set up deps, create k3d cluster, deploy scenario and collector"
+	@echo "                 Use SCENARIO=1,2,3,4 to choose the scenario"
 	@echo "  make down      - Delete scenario, collector, and k3d cluster"
 	@echo "  make clean     - Remove local build/runtime artifacts"
 	@echo "  make status    - Show cluster and pod status"
@@ -22,6 +41,7 @@ help:
 
 up:
 	K3_CLUSTER_NAME="$(K3_CLUSTER_NAME)" \
+	SCENARIO="$(SCENARIO)" \
 	SCENARIO_DIR="$(SCENARIO_DIR)" \
 	SCENARIO_NAMESPACE="$(SCENARIO_NAMESPACE)" \
 	SCENARIO_PODS="$(SCENARIO_PODS)" \
@@ -56,11 +76,11 @@ sync-db:
 	@bash scripts/sync-collector-db.sh "$(DB)"
 
 verify-scenario: sync-db
-	@echo "Scenario pod status:"
+	@echo "Scenario $(SCENARIO) pod status:"
 	@kubectl get pods -n $(SCENARIO_NAMESPACE) $(SCENARIO_PODS) -o wide || true
 	@echo ""
 	@echo "Recent pod metric deltas from $(DB):"
-	@sqlite3 -header -column "$(DB)" "SELECT pod_namespace, pod_name, COUNT(*) AS rows, ROUND((MAX(diskio_write_bytes)-MIN(diskio_write_bytes))/1048576.0, 2) AS disk_write_mib_delta, ROUND((MAX(diskio_read_bytes)-MIN(diskio_read_bytes))/1048576.0, 2) AS disk_read_mib_delta, ROUND((MAX(network_tx_bytes)-MIN(network_tx_bytes))/1024.0, 2) AS net_tx_kib_delta FROM metrics WHERE datetime(timestamp) >= datetime('now', '-5 minutes') AND pod_name LIKE 'pod-%' GROUP BY pod_namespace, pod_name ORDER BY disk_write_mib_delta DESC;"
+	@sqlite3 -header -column "$(DB)" "SELECT pod_namespace, pod_name, COUNT(*) AS rows, ROUND((MAX(diskio_write_bytes)-MIN(diskio_write_bytes))/1048576.0, 2) AS disk_write_mib_delta, ROUND((MAX(diskio_read_bytes)-MIN(diskio_read_bytes))/1048576.0, 2) AS disk_read_mib_delta, ROUND((MAX(network_tx_bytes)-MIN(network_tx_bytes))/1024.0, 2) AS net_tx_kib_delta FROM metrics WHERE datetime(timestamp) >= datetime('now', '-5 minutes') AND pod_name IN ($(shell printf "'%s'," $(SCENARIO_PODS) | sed 's/,$$//')) GROUP BY pod_namespace, pod_name ORDER BY disk_write_mib_delta DESC;"
 
 api:
 	$(MAKE) -C telemetry-api run DB=../$(DB)

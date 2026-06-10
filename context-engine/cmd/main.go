@@ -53,6 +53,15 @@ func main() {
 	fmt.Printf("Generated context for %d container(s)\n", globalContext.TotalContainers)
 	fmt.Printf("Containers at risk: %d\n", globalContext.ContainersAtRisk)
 	fmt.Printf("Critical anomalies: %d\n", globalContext.CriticalAnomalies)
+	if len(globalContext.ScenarioDetections) > 0 {
+		detected := 0
+		for _, scenario := range globalContext.ScenarioDetections {
+			if scenario.Detected {
+				detected++
+			}
+		}
+		fmt.Printf("Scenarios detected: %d/%d\n", detected, len(globalContext.ScenarioDetections))
+	}
 
 	// Save context
 	outputFile, err := contextGen.SaveContextWithMode(globalContext, *outputDir, *mode)
@@ -77,6 +86,23 @@ func main() {
 		fmt.Println("\n=== Global Recommendations ===")
 		for _, rec := range globalContext.Recommendations {
 			fmt.Printf("  • %s\n", rec)
+		}
+	}
+
+	if len(globalContext.ScenarioDetections) > 0 {
+		fmt.Println("\n=== Scenario Detections ===")
+		for _, scenario := range globalContext.ScenarioDetections {
+			status := "not detected"
+			if scenario.Detected {
+				status = "detected"
+			}
+			fmt.Printf("\n%s: %s (confidence %.0f%%, severity %s)\n", scenario.Name, status, scenario.Confidence*100, scenario.Severity)
+			if len(scenario.MissingPods) > 0 {
+				fmt.Printf("  Missing pods: %v\n", scenario.MissingPods)
+			}
+			for _, evidence := range scenario.Evidence {
+				fmt.Printf("  - %s\n", evidence)
+			}
 		}
 	}
 }
