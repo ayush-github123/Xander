@@ -5,7 +5,7 @@ Xander is a local Kubernetes telemetry demo for spotting pod resource pressure a
 ## Components
 
 - `telemetry-collector/` — DaemonSet collector for pod discovery, cgroup metrics, events, and SQLite storage.
-- `aggregation-engine/` — Reads collector metrics and writes rolling aggregate JSON files.
+- `context-engine/` — Reads collector metrics once, builds rolling aggregates, evaluates rule-engine findings, and produces context JSON.
 - `telemetry-api/` — Small read-only API over the collector metrics database.
 - `agent/` — Python analysis agent that loads context files and produces analysis reports (supports `analyze`, `daemon`, `watch`).
 - `streamlit_app.py` — Lightweight interactive UI for exploring metrics and aggregates.
@@ -65,15 +65,15 @@ kubectl cp telemetry-system/$POD_NAME:/tmp/metrics.db ./metrics.db
 sqlite3 ./metrics.db "SELECT COUNT(*) FROM metrics;"
 ```
 
-- Aggregation engine:
+- Aggregates and context:
 
 ```bash
-cd aggregation-engine
-make run      # 1-minute windows
-make run-5m   # 5-minute windows
+cd context-engine
+make aggregates DB=../telemetry-collector/metrics.db  # aggregate JSON only
+make run DB=../telemetry-collector/metrics.db         # aggregates + context
 ```
 
-By default the engine reads `../telemetry-collector/metrics.db` and writes `aggregates_<window>.json`.
+The context engine reads `../telemetry-collector/metrics.db` once per run. That single raw dataset feeds both rolling aggregation and the isolated rule engine. Rule findings are evaluated internally but are not emitted into the context output yet.
 
 - Telemetry API:
 

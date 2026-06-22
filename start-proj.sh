@@ -126,7 +126,7 @@ setup_python_env() {
 
 download_go_modules() {
   log "Downloading Go modules"
-  for dir in telemetry-collector telemetry-api aggregation-engine context-engine; do
+  for dir in telemetry-collector telemetry-api context-engine; do
     if [ -f "$ROOT_DIR/$dir/go.mod" ]; then
       (cd "$ROOT_DIR/$dir" && go mod download)
     fi

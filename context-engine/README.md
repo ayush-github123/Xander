@@ -1,16 +1,18 @@
 # Context Engine
 
-The Context Engine transforms aggregated metrics from the Aggregation Engine into structured, actionable context for the Agent.
+The Context Engine reads raw collector metrics from SQLite, builds rolling aggregates, evaluates rule-engine findings from the same raw dataset, and transforms aggregate features into structured, actionable context for the Agent.
 
 ## Purpose
 
-- **Input**: Aggregated metrics (CPU, memory, disk I/O, network, process metrics)
+- **Input**: Raw collector metrics from SQLite, or optional precomputed aggregate JSON
 - **Processing**: Analyzes metrics for anomalies, trends, and correlations
 - **Output**: Structured context with insights, anomaly flags, and recommendations
 
 ## Key Components
 
 - **Anomaly Detector**: Identifies metric deviations from baseline
+- **Rolling Aggregator**: Computes 1m/5m/15m windows directly from raw SQLite metrics
+- **Rule Engine**: Evaluates hidden pod-dependency rules from the same raw samples used by aggregation
 - **Utilization Analyzer**: Calculates resource usage percentages and trends
 - **Health Analyzer**: Assesses container health and generates recommendations
 - **Correlation Analyzer**: Finds relationships between containers
@@ -25,17 +27,22 @@ make build
 
 ### Full Mode (includes raw metrics)
 ```bash
-./bin/context-engine -aggregates ../aggregation-engine/aggregates_1m.json
+./bin/context-engine -db ../telemetry-collector/metrics.db -window 1m -last-minutes 60 -mode full
 ```
 
 ### Lightweight Mode (insights only) ⭐ Recommended for Agent
 ```bash
-./bin/context-engine -aggregates ../aggregation-engine/aggregates_1m.json -mode lightweight
+./bin/context-engine -db ../telemetry-collector/metrics.db -window 1m -last-minutes 60 -mode lightweight
+```
+
+### Aggregate JSON Only
+```bash
+./bin/context-engine -db ../telemetry-collector/metrics.db -window 5m -last-minutes 1440 -aggregate-only
 ```
 
 ### Custom Output Directory
 ```bash
-./bin/context-engine -aggregates aggregates_1m.json -output /tmp/context -mode lightweight
+./bin/context-engine -db ../telemetry-collector/metrics.db -output /tmp/context -mode lightweight
 ```
 
 ## Output Comparison
@@ -97,7 +104,7 @@ make build
 Use lightweight mode output:
 ```bash
 # Generate context
-./bin/context-engine -aggregates aggregates_1m.json -mode lightweight -output ./context
+./bin/context-engine -db ../telemetry-collector/metrics.db -mode lightweight -output ./context
 
 # Read in your agent
 import json
@@ -108,4 +115,3 @@ for container_id, ctx in context['containers'].items():
     # Each context is ~40 lines and ready for processing
     print(f"{container_id}: {ctx['risk_level']} - {ctx['recommendations']}")
 ```
-

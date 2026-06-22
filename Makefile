@@ -55,13 +55,11 @@ down:
 
 clean:
 	-$(MAKE) -C telemetry-collector clean
-	-$(MAKE) -C aggregation-engine clean
 	-$(MAKE) -C context-engine clean
 	-$(MAKE) -C telemetry-api clean
 	rm -rf .venv
 	rm -f $(DB) /tmp/collector-metrics.db
 	rm -f telemetry-api/telemetry-api
-	rm -f aggregation-engine/aggregates_*.json
 	rm -rf context-engine/context-output agent/analyses
 
 status:
@@ -89,12 +87,12 @@ ui:
 	. .venv/bin/activate && streamlit run streamlit_app.py
 
 aggregates:
-	$(MAKE) -C aggregation-engine run
+	$(MAKE) -C context-engine aggregates DB=../$(DB)
 
 context:
-	$(MAKE) -C context-engine run
+	$(MAKE) -C context-engine run DB=../$(DB)
 
 test:
 	$(MAKE) -C telemetry-collector test
-	$(MAKE) -C aggregation-engine test
+	$(MAKE) -C context-engine test
 	$(MAKE) -C telemetry-api test
