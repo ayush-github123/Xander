@@ -155,8 +155,9 @@ deploy_scenario() {
 }
 
 deploy_collector() {
-  log "Building and deploying telemetry collector"
+  log "Building and deploying telemetry collector with context-engine sidecar"
   make -C "$ROOT_DIR/telemetry-collector" docker-build
+  make -C "$ROOT_DIR/context-engine" docker-build
   make -C "$ROOT_DIR/telemetry-collector" deploy-k3 K3_CLUSTER_NAME="$K3_CLUSTER_NAME"
   kubectl rollout status daemonset/telemetry-collector -n telemetry-system --timeout=120s
 }

@@ -1,4 +1,4 @@
-.PHONY: help up down clean status logs sync-db verify-scenario api ui aggregates context test
+.PHONY: help up down clean status logs sync-db verify-scenario api ui aggregates findings context context-service test
 
 K3_CLUSTER_NAME?=xander
 SCENARIO?=1
@@ -37,6 +37,8 @@ help:
 	@echo "  make verify-scenario - Check scenario pods and recent pod metric deltas"
 	@echo "  make api       - Run telemetry API against $(DB)"
 	@echo "  make ui        - Run Streamlit UI"
+	@echo "  make findings  - Write node-local rule findings from $(DB)"
+	@echo "  make context-service - Continuously persist context-engine node-local results"
 	@echo "  make test      - Run Go tests"
 
 up:
@@ -89,8 +91,14 @@ ui:
 aggregates:
 	$(MAKE) -C context-engine aggregates DB=../$(DB)
 
+findings:
+	$(MAKE) -C context-engine findings DB=../$(DB)
+
 context:
 	$(MAKE) -C context-engine run DB=../$(DB)
+
+context-service:
+	$(MAKE) -C context-engine service DB=../$(DB)
 
 test:
 	$(MAKE) -C telemetry-collector test

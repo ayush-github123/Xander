@@ -134,16 +134,16 @@ func (fs FeatureSet) PodsOnNode(nodeName string) []PodFeatures {
 // Finding is a rule engine result. It is not connected to existing API/UI
 // outputs yet by design.
 type Finding struct {
-	RuleID      string
-	Name        string
-	Category    string
-	Severity    string
-	Confidence  float64
-	SourcePods  []string
-	VictimPods  []string
-	Evidence    []string
-	Signals     map[string]float64
-	Recommended []string
+	RuleID      string             `json:"rule_id"`
+	Name        string             `json:"name"`
+	Category    string             `json:"category"`
+	Severity    string             `json:"severity"`
+	Confidence  float64            `json:"confidence"`
+	SourcePods  []string           `json:"source_pods"`
+	VictimPods  []string           `json:"victim_pods"`
+	Evidence    []string           `json:"evidence"`
+	Signals     map[string]float64 `json:"signals"`
+	Recommended []string           `json:"recommended"`
 }
 
 type RuleDefinition struct {

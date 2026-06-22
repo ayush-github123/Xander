@@ -21,6 +21,7 @@ type Request struct {
 type Result struct {
 	Samples     []telemetry.Sample
 	Aggregates  map[string][]aggregation.Window
+	Features    ruleengine.FeatureSet
 	Findings    []ruleengine.Finding
 	WindowStart time.Time
 	WindowEnd   time.Time
@@ -55,11 +56,14 @@ func Run(request Request) (Result, error) {
 		ruleSamples = append(ruleSamples, toRuleSample(sample))
 	}
 	features := ruleengine.BuildFeatureSet(ruleSamples)
+	features.WindowStart = windowStart
+	features.WindowEnd = windowEnd
 	findings := ruleengine.NewDefaultEngine().Evaluate(features)
 
 	return Result{
 		Samples:     samples,
 		Aggregates:  aggregates,
+		Features:    features,
 		Findings:    findings,
 		WindowStart: windowStart,
 		WindowEnd:   windowEnd,

@@ -1,7 +1,8 @@
-.PHONY: build run clean test help docker-build docker-push ensure-k3 deploy-k3 logs-k3 delete-k3 delete-k3-cluster fmt lint vet mod-tidy deps
+.PHONY: build run clean test help docker-build docker-build-context docker-build-all docker-push ensure-k3 deploy-k3 logs-k3 logs-context-k3 delete-k3 delete-k3-cluster fmt lint vet mod-tidy deps
 
 BINARY_NAME=telemetry-collector
 DOCKER_IMAGE=telemetry-collector:latest
+CONTEXT_ENGINE_IMAGE?=context-engine:latest
 GO=go
 GOFLAGS=-v
 MAIN_PATH=./cmd/collector/main.go
@@ -26,6 +27,8 @@ help:
 	@echo ""
 	@echo "$(YELLOW)Docker & K3 Targets:$(NC)"
 	@echo "  make docker-build   - Build Docker image"
+	@echo "  make docker-build-context - Build context-engine sidecar image"
+	@echo "  make docker-build-all - Build collector and context-engine images"
 	@echo "  make docker-push    - Push Docker image to registry"
 	@echo "  make ensure-k3      - Create/use a local k3s cluster via k3d"
 	@echo "  make deploy-k3      - Deploy to the k3 cluster"
@@ -66,6 +69,12 @@ docker-build: clean
 	@echo "$(GREEN)[SUCCESS]$(NC) Docker image created: $(DOCKER_IMAGE)"
 	@docker image ls $(DOCKER_IMAGE)
 
+docker-build-context:
+	@echo "$(GREEN)[DOCKER]$(NC) Building context-engine sidecar image..."
+	@$(MAKE) -C ../context-engine docker-build DOCKER_IMAGE=$(CONTEXT_ENGINE_IMAGE)
+
+docker-build-all: docker-build docker-build-context
+
 docker-push:
 	@echo "$(GREEN)[DOCKER]$(NC) Pushing Docker image..."
 	@docker push $(DOCKER_IMAGE)
@@ -85,6 +94,7 @@ ensure-k3:
 deploy-k3: ensure-k3
 	@echo "$(GREEN)[K3]$(NC) Importing image into k3d cluster..."
 	@k3d image import $(DOCKER_IMAGE) --cluster $(K3_CLUSTER_NAME)
+	@k3d image import $(CONTEXT_ENGINE_IMAGE) --cluster $(K3_CLUSTER_NAME)
 	@echo "$(GREEN)[K3]$(NC) Applying Kubernetes manifests..."
 	@kubectl apply -f ./k8s/
 	@echo "$(GREEN)[SUCCESS]$(NC) Deployed to k3 cluster"
@@ -93,7 +103,11 @@ deploy-k3: ensure-k3
 
 logs-k3:
 	@echo "$(GREEN)[K3]$(NC) Streaming logs from telemetry-collector..."
-	@kubectl logs -n telemetry-system -l app=telemetry-collector -f
+	@kubectl logs -n telemetry-system -l app=telemetry-collector -c collector -f
+
+logs-context-k3:
+	@echo "$(GREEN)[K3]$(NC) Streaming logs from context-engine sidecar..."
+	@kubectl logs -n telemetry-system -l app=telemetry-collector -c context-engine -f
 
 delete-k3:
 	@echo "$(GREEN)[K3]$(NC) Deleting from k3 cluster..."

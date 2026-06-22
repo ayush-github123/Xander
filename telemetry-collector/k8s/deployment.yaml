@@ -94,8 +94,12 @@ spec:
           value: "10s"
         - name: METRICS_INTERVAL
           value: "5s"
+        - name: METRICS_DB_PATH
+          value: "/data/metrics.db"
         
         volumeMounts:
+        - name: telemetry-data
+          mountPath: /data
         - name: host-root
           mountPath: /host
           readOnly: true
@@ -122,10 +126,48 @@ spec:
             command: ["sh", "-c", "test -r /proc/1/comm"]
           initialDelaySeconds: 30
           periodSeconds: 60
+
+      - name: context-engine
+        image: context-engine:latest
+        imagePullPolicy: IfNotPresent
+        args:
+          - "-service"
+          - "-db"
+          - "/data/metrics.db"
+          - "-window"
+          - "1m"
+          - "-last-minutes"
+          - "60"
+          - "-service-interval"
+          - "30s"
+          - "-service-output"
+          - "/data/context-engine"
+          - "-mode"
+          - "compact"
+
+        volumeMounts:
+        - name: telemetry-data
+          mountPath: /data
+
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 250m
+            memory: 256Mi
+
+        livenessProbe:
+          exec:
+            command: ["sh", "-c", "test -d /data/context-engine || test -f /data/metrics.db"]
+          initialDelaySeconds: 45
+          periodSeconds: 60
       
       terminationGracePeriodSeconds: 30
       
       volumes:
+      - name: telemetry-data
+        emptyDir: {}
       - name: host-root
         hostPath:
           path: /

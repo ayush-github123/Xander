@@ -4,8 +4,8 @@ Xander is a local Kubernetes telemetry demo for spotting pod resource pressure a
 
 ## Components
 
-- `telemetry-collector/` — DaemonSet collector for pod discovery, cgroup metrics, events, and SQLite storage.
-- `context-engine/` — Reads collector metrics once, builds rolling aggregates, evaluates rule-engine findings, and produces context JSON.
+- `telemetry-collector/` — DaemonSet collector for pod discovery, cgroup metrics, events, and node-local SQLite storage.
+- `context-engine/` — Runs as a node-local sidecar or local CLI, reads collector metrics once per cycle, builds rolling aggregates, evaluates rule-engine findings, and produces context JSON.
 - `telemetry-api/` — Small read-only API over the collector metrics database.
 - `agent/` — Python analysis agent that loads context files and produces analysis reports (supports `analyze`, `daemon`, `watch`).
 - `streamlit_app.py` — Lightweight interactive UI for exploring metrics and aggregates.
@@ -28,7 +28,7 @@ cd /path/to/xander
 make up
 ```
 
-This installs Python deps into a virtualenv, downloads Go modules, creates or reuses a single-node `k3d` cluster, deploys the noisy-neighbor scenario, and deploys the collector.
+This installs Python deps into a virtualenv, downloads Go modules, creates or reuses a single-node `k3d` cluster, deploys the noisy-neighbor scenario, and deploys the collector with the context-engine sidecar.
 
 Typical next steps:
 
@@ -49,11 +49,11 @@ make verify-scenario
 
 These sections describe how to run each component individually for development and testing.
 
-- Collector (k8s): Build and deploy the collector image into your local cluster.
+- Collector and node-local context service (k8s): Build and deploy the collector plus context-engine sidecar images into your local cluster.
 
 ```bash
 cd telemetry-collector
-make docker-build
+make docker-build-all
 make deploy-k3
 ```
 
@@ -61,7 +61,7 @@ make deploy-k3
 
 ```bash
 POD_NAME=$(kubectl get pods -n telemetry-system -l app=telemetry-collector -o jsonpath='{.items[0].metadata.name}')
-kubectl cp telemetry-system/$POD_NAME:/tmp/metrics.db ./metrics.db
+kubectl cp -c collector telemetry-system/$POD_NAME:/data/metrics.db ./metrics.db
 sqlite3 ./metrics.db "SELECT COUNT(*) FROM metrics;"
 ```
 
@@ -70,10 +70,31 @@ sqlite3 ./metrics.db "SELECT COUNT(*) FROM metrics;"
 ```bash
 cd context-engine
 make aggregates DB=../telemetry-collector/metrics.db  # aggregate JSON only
+make findings DB=../telemetry-collector/metrics.db    # aggregate JSON + separate rule findings JSON
 make run DB=../telemetry-collector/metrics.db         # aggregates + context
 ```
 
-The context engine reads `../telemetry-collector/metrics.db` once per run. That single raw dataset feeds both rolling aggregation and the isolated rule engine. Rule findings are evaluated internally but are not emitted into the context output yet.
+The context engine reads `../telemetry-collector/metrics.db` once per run. That single raw dataset feeds both rolling aggregation and the isolated rule engine. Rule findings are written as a separate node-local `findings_*.json` artifact and are not mixed into the context output yet.
+
+- Node-local findings:
+
+```bash
+make sync-db
+make findings DB=telemetry-collector/metrics.db
+```
+
+This is the current Option A architecture: each node collector owns that node's raw metrics, the node-local analyzer produces compact findings, and a later cluster-level API/UI can collect findings without moving raw metrics between nodes.
+
+- Node-local context service:
+
+```bash
+make sync-db
+make context-service DB=telemetry-collector/metrics.db
+```
+
+The service wakes on an interval, reads recent raw SQLite samples once, builds aggregates, evaluates rules, and persists timestamped JSON files under `context-engine/service-output/`. It also maintains `*_latest.json` copies for easy ingestion.
+
+Inside Kubernetes, the same service runs as a sidecar in each collector pod. The collector writes `/data/metrics.db`; the context-engine sidecar reads that same node-local DB and writes `/data/context-engine/{aggregates,findings,context}`.
 
 - Telemetry API:
 
@@ -118,7 +139,7 @@ The sidebar lets you point the UI at a local `metrics.db` file and toggle live c
 
 - If Docker is not reachable, ensure it is running and that your user has permission to access the daemon.
 - If `k3d` is missing, install it first and rerun `make up`.
-- The collector stores the live DB inside the pod at `/tmp/metrics.db`. Copy it out for local analysis.
+- The collector stores the live DB inside the pod at `/data/metrics.db` when deployed with the sidecar. Older local runs may still use `/tmp/metrics.db`.
 - `make sync-db` merges collector DBs if a multi-node cluster already exists.
 
 ## Contributing

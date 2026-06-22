@@ -80,6 +80,28 @@ func TestGenericRulesRequireSameNode(t *testing.T) {
 	}
 }
 
+func TestNewReportIncludesWindowNodesAndFindings(t *testing.T) {
+	features := NewFeatureSet(
+		testPod("backup-writer", withNode("node-b"), withWrites(512)),
+		testPod("orders-api", withNode("node-a"), withProcesses(3)),
+	)
+	features.WindowStart = testStart
+	features.WindowEnd = testStart.Add(time.Minute)
+
+	findings := []Finding{{RuleID: "generic.disk_write_noisy_neighbor"}}
+	report := NewReport(features, findings, testStart.Add(2*time.Minute))
+
+	if !report.WindowStart.Equal(testStart) || !report.WindowEnd.Equal(testStart.Add(time.Minute)) {
+		t.Fatalf("unexpected report window: %s - %s", report.WindowStart, report.WindowEnd)
+	}
+	if got, want := report.NodeNames, []string{"node-a", "node-b"}; len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("node names = %#v, want %#v", got, want)
+	}
+	if report.FindingCount != 1 || len(report.Findings) != 1 {
+		t.Fatalf("finding count/report mismatch: %#v", report)
+	}
+}
+
 func TestBuildFeatureSetFromRawSamples(t *testing.T) {
 	end := testStart.Add(60 * time.Second)
 	samples := []Sample{
