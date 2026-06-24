@@ -5,7 +5,7 @@ Xander is a local Kubernetes telemetry demo for spotting pod resource pressure a
 ## Components
 
 - `telemetry-collector/` — DaemonSet collector for pod discovery, cgroup metrics, events, and node-local SQLite storage.
-- `context-engine/` — Runs as a node-local sidecar or local CLI, reads collector metrics once per cycle, builds rolling aggregates, evaluates rule-engine findings, and produces context JSON.
+- `context-engine/` — Runs as a node-local context-engine container or local CLI, reads collector metrics once per cycle, builds rolling aggregates, evaluates rule-engine findings, and produces context JSON.
 - `telemetry-api/` — Small read-only API over the collector metrics database.
 - `agent/` — Python analysis agent that loads context files and produces analysis reports (supports `analyze`, `daemon`, `watch`).
 - `streamlit_app.py` — Lightweight interactive UI for exploring metrics and aggregates.
@@ -28,7 +28,7 @@ cd /path/to/xander
 make up
 ```
 
-This installs Python deps into a virtualenv, downloads Go modules, creates or reuses a single-node `k3d` cluster, deploys the noisy-neighbor scenario, and deploys the collector with the context-engine sidecar.
+This installs Python deps into a virtualenv, downloads Go modules, creates or reuses a single-node `k3d` cluster, deploys the noisy-neighbor scenario, and deploys the collector with the context-engine container.
 
 Typical next steps:
 
@@ -49,7 +49,7 @@ make verify-scenario
 
 These sections describe how to run each component individually for development and testing.
 
-- Collector and node-local context service (k8s): Build and deploy the collector plus context-engine sidecar images into your local cluster.
+- Collector and node-local context service (k8s): Build and deploy the collector plus context-engine container images into your local cluster.
 
 ```bash
 cd telemetry-collector
@@ -94,7 +94,9 @@ make context-service DB=telemetry-collector/metrics.db
 
 The service wakes on an interval, reads recent raw SQLite samples once, builds aggregates, evaluates rules, and persists timestamped JSON files under `context-engine/service-output/`. It also maintains `*_latest.json` copies for easy ingestion.
 
-Inside Kubernetes, the same service runs as a sidecar in each collector pod. The collector writes `/data/metrics.db`; the context-engine sidecar reads that same node-local DB and writes `/data/context-engine/{aggregates,findings,context}`.
+Inside Kubernetes, the same service runs as the context-engine container in each collector pod. The collector writes `/data/metrics.db`; the context-engine container reads that same node-local DB and writes `/data/context-engine/{aggregates,findings,context}` plus `/data/context-engine/results.db`.
+
+When rule-based detection finds a problem, context-engine writes a notification under `/data/agent/inbox/`. The agent can also query rolling metrics through the persisted SQLite DB instead of reading raw collector data directly.
 
 - Telemetry API:
 
@@ -119,6 +121,10 @@ python main.py analyze --latest
 
 # Run as a daemon monitoring for new context files (writes analyses to `analyses/` next to contexts)
 python main.py daemon --poll-interval 60
+
+# Query rolling metrics persisted by context-engine
+python main.py query-metrics --recent-findings
+python main.py query-metrics --pod default/pod-name
 ```
 
 The `analyze` command supports `--output-format` (`markdown` or `json`) and `--output-file`.
@@ -139,7 +145,7 @@ The sidebar lets you point the UI at a local `metrics.db` file and toggle live c
 
 - If Docker is not reachable, ensure it is running and that your user has permission to access the daemon.
 - If `k3d` is missing, install it first and rerun `make up`.
-- The collector stores the live DB inside the pod at `/data/metrics.db` when deployed with the sidecar. Older local runs may still use `/tmp/metrics.db`.
+- The collector stores the live DB inside the pod at `/data/metrics.db` when deployed with the context-engine container. Older local runs may still use `/tmp/metrics.db`.
 - `make sync-db` merges collector DBs if a multi-node cluster already exists.
 
 ## Contributing
