@@ -142,6 +142,10 @@ spec:
           - "30s"
           - "-service-output"
           - "/data/context-engine"
+          - "-results-db"
+          - "/data/context-engine/results.db"
+          - "-agent-inbox"
+          - "/data/agent/inbox"
           - "-mode"
           - "compact"
 

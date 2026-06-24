@@ -23,6 +23,8 @@ type Config struct {
 	SampleLimit int
 	Interval    time.Duration
 	Now         time.Time
+	ResultsDB   string
+	AgentInbox  string
 	SkipContext bool
 	WriteLatest bool
 	ContextGen  *analyzer.ContextGenerator
@@ -30,15 +32,17 @@ type Config struct {
 }
 
 type CycleResult struct {
-	GeneratedAt    time.Time
-	SampleCount    int
-	ContainerCount int
-	FindingCount   int
-	AggregateFile  string
-	FindingsFile   string
-	ContextFile    string
-	WindowStart    time.Time
-	WindowEnd      time.Time
+	GeneratedAt      time.Time
+	SampleCount      int
+	ContainerCount   int
+	FindingCount     int
+	AggregateFile    string
+	FindingsFile     string
+	ContextFile      string
+	ResultsDB        string
+	NotificationFile string
+	WindowStart      time.Time
+	WindowEnd        time.Time
 }
 
 func Run(ctx context.Context, config Config) error {
@@ -112,6 +116,13 @@ func RunOnce(config Config) (CycleResult, error) {
 	if err := ruleengine.SaveReport(report, findingsFile); err != nil {
 		return CycleResult{}, err
 	}
+	if err := persistCycle(config.ResultsDB, generatedAt, result.Aggregates, report); err != nil {
+		return CycleResult{}, err
+	}
+	notificationFile, err := notifyAgent(config.AgentInbox, report, config.ResultsDB)
+	if err != nil {
+		return CycleResult{}, err
+	}
 
 	contextFile := ""
 	if !config.SkipContext {
@@ -141,15 +152,17 @@ func RunOnce(config Config) (CycleResult, error) {
 	}
 
 	cycle := CycleResult{
-		GeneratedAt:    generatedAt,
-		SampleCount:    len(result.Samples),
-		ContainerCount: len(result.Aggregates),
-		FindingCount:   len(result.Findings),
-		AggregateFile:  aggregateFile,
-		FindingsFile:   findingsFile,
-		ContextFile:    contextFile,
-		WindowStart:    result.WindowStart,
-		WindowEnd:      result.WindowEnd,
+		GeneratedAt:      generatedAt,
+		SampleCount:      len(result.Samples),
+		ContainerCount:   len(result.Aggregates),
+		FindingCount:     len(result.Findings),
+		AggregateFile:    aggregateFile,
+		FindingsFile:     findingsFile,
+		ContextFile:      contextFile,
+		ResultsDB:        config.ResultsDB,
+		NotificationFile: notificationFile,
+		WindowStart:      result.WindowStart,
+		WindowEnd:        result.WindowEnd,
 	}
 	config.Logger.Printf(
 		"service cycle complete: samples=%d containers=%d findings=%d window=%s..%s",
@@ -165,6 +178,12 @@ func RunOnce(config Config) (CycleResult, error) {
 func withDefaults(config Config) Config {
 	if config.OutputDir == "" {
 		config.OutputDir = "./service-output"
+	}
+	if config.ResultsDB == "" {
+		config.ResultsDB = filepath.Join(config.OutputDir, "results.db")
+	}
+	if config.AgentInbox == "" {
+		config.AgentInbox = filepath.Join(config.OutputDir, "agent-inbox")
 	}
 	if config.Mode == "" {
 		config.Mode = "compact"

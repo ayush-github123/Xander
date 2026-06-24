@@ -32,6 +32,8 @@ func main() {
 	serviceMode := flag.Bool("service", false, "Run continuously as a node-local service")
 	serviceInterval := flag.Duration("service-interval", time.Minute, "How often service mode reads recent metrics and persists results")
 	serviceOutput := flag.String("service-output", "./service-output", "Service output directory for aggregates, findings, and context")
+	resultsDB := flag.String("results-db", "", "SQLite DB where service mode stores rolling metric windows and rule findings")
+	agentInbox := flag.String("agent-inbox", "", "Directory where service mode writes rule-finding notifications for the agent")
 	serviceNoLatest := flag.Bool("service-no-latest", false, "Do not maintain latest JSON copies in service mode")
 	flag.Parse()
 
@@ -68,6 +70,8 @@ func main() {
 			LastMinutes: *lastMinutes,
 			SampleLimit: *sampleLimit,
 			Interval:    *serviceInterval,
+			ResultsDB:   *resultsDB,
+			AgentInbox:  *agentInbox,
 			SkipContext: *aggregateOnly,
 			WriteLatest: !*serviceNoLatest,
 		})

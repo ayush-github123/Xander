@@ -27,7 +27,7 @@ help:
 	@echo ""
 	@echo "$(YELLOW)Docker & K3 Targets:$(NC)"
 	@echo "  make docker-build   - Build Docker image"
-	@echo "  make docker-build-context - Build context-engine sidecar image"
+	@echo "  make docker-build-context - Build context-engine container image"
 	@echo "  make docker-build-all - Build collector and context-engine images"
 	@echo "  make docker-push    - Push Docker image to registry"
 	@echo "  make ensure-k3      - Create/use a local k3s cluster via k3d"
@@ -70,7 +70,7 @@ docker-build: clean
 	@docker image ls $(DOCKER_IMAGE)
 
 docker-build-context:
-	@echo "$(GREEN)[DOCKER]$(NC) Building context-engine sidecar image..."
+	@echo "$(GREEN)[DOCKER]$(NC) Building context-engine container image..."
 	@$(MAKE) -C ../context-engine docker-build DOCKER_IMAGE=$(CONTEXT_ENGINE_IMAGE)
 
 docker-build-all: docker-build docker-build-context
@@ -106,7 +106,7 @@ logs-k3:
 	@kubectl logs -n telemetry-system -l app=telemetry-collector -c collector -f
 
 logs-context-k3:
-	@echo "$(GREEN)[K3]$(NC) Streaming logs from context-engine sidecar..."
+	@echo "$(GREEN)[K3]$(NC) Streaming logs from context-engine container..."
 	@kubectl logs -n telemetry-system -l app=telemetry-collector -c context-engine -f
 
 delete-k3:

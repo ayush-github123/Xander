@@ -23,7 +23,7 @@ The Context Engine reads raw collector metrics from SQLite, builds rolling aggre
 make build
 ```
 
-Build the container image used by the collector DaemonSet sidecar:
+Build the container image used by the collector DaemonSet pod:
 
 ```bash
 make docker-build
@@ -83,11 +83,22 @@ service-output/
   context/
     context_compact_1782129600.json
     context_compact_latest.json
+  results.db
+  agent-inbox/
+    rule_findings_20260622T120000Z.json
 ```
 
 Use `-aggregate-only` with `-service` to persist only aggregates and findings while skipping context generation. Use `-service-no-latest` to keep only timestamped history files.
 
-In Kubernetes, this service runs as the `context-engine` sidecar next to the `collector` container. Both containers mount `/data`; the collector writes `/data/metrics.db`, and the sidecar writes `/data/context-engine/`.
+`results.db` is the agent-queryable SQLite database. It contains:
+
+- `rolling_metric_windows`: persisted rolling aggregate windows
+- `rule_findings`: persisted rule findings
+- `service_runs`: one row per context-engine service cycle
+
+When rules find a problem, context-engine also writes a notification into `agent-inbox/`. The notification is separate from context JSON and is meant to wake the agent when rule-based detection says something is wrong.
+
+In Kubernetes, this service runs as the `context-engine` container next to the `collector` container. Both containers mount `/data`; the collector writes `/data/metrics.db`, and the context-engine container writes `/data/context-engine/` and `/data/agent/inbox/`.
 
 ### Custom Output Directory
 ```bash

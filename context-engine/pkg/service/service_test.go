@@ -44,6 +44,8 @@ func TestRunOncePersistsNodeLocalResults(t *testing.T) {
 	assertFileExists(t, result.AggregateFile)
 	assertFileExists(t, result.FindingsFile)
 	assertFileExists(t, result.ContextFile)
+	assertFileExists(t, result.ResultsDB)
+	assertFileExists(t, result.NotificationFile)
 	assertFileExists(t, filepath.Join(tempDir, "service-output", "aggregates", "aggregates_1m_latest.json"))
 	assertFileExists(t, filepath.Join(tempDir, "service-output", "findings", "findings_1m_latest.json"))
 	assertFileExists(t, filepath.Join(tempDir, "service-output", "context", "context_compact_latest.json"))

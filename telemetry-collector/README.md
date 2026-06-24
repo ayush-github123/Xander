@@ -118,7 +118,7 @@ sqlite3 ./metrics.db "SELECT COUNT(*) FROM metrics;"
 The Kubernetes DaemonSet runs two containers per node:
 
 - `collector` writes node-local raw metrics to `/data/metrics.db`.
-- `context-engine` reads that same DB on an interval and writes node-local artifacts under `/data/context-engine/`.
+- `context-engine` reads that same DB on an interval, writes node-local artifacts under `/data/context-engine/`, persists rolling metric windows in `/data/context-engine/results.db`, and writes rule notifications to `/data/agent/inbox/`.
 
 The `/data` path is an `emptyDir` shared only by containers in the same pod, so raw metrics stay node-local.
 
