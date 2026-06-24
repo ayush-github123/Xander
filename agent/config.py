@@ -11,6 +11,9 @@ from typing import Optional
 from dotenv import load_dotenv
 
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
 @dataclass
 class AgentConfig:
     """Agent configuration settings."""
@@ -50,6 +53,12 @@ class AgentConfig:
     
     context_directory: str = "/home/ayushrai/Documents/xander/context-engine/context-output"
     """Where to look for context JSON files"""
+
+    rolling_metrics_db: str = str(REPO_ROOT / "context-engine" / "service-output" / "results.db")
+    """SQLite DB with rolling metric windows and rule findings from context-engine service"""
+
+    rule_findings_inbox: str = str(REPO_ROOT / "context-engine" / "service-output" / "agent-inbox")
+    """Directory where context-engine writes rule-finding notifications"""
     
     # Output Configuration
     output_format: str = "markdown"
@@ -100,7 +109,15 @@ class AgentConfig:
             poll_interval_seconds=int(os.getenv("AGENT_POLL_INTERVAL_SECONDS", "60")),
             context_directory=os.getenv(
                 "AGENT_CONTEXT_DIRECTORY",
-                "/home/ayushrai/Documents/xander/context-engine/context-output"
+                str(REPO_ROOT / "context-engine" / "context-output")
+            ),
+            rolling_metrics_db=os.getenv(
+                "AGENT_ROLLING_METRICS_DB",
+                str(REPO_ROOT / "context-engine" / "service-output" / "results.db")
+            ),
+            rule_findings_inbox=os.getenv(
+                "AGENT_RULE_FINDINGS_INBOX",
+                str(REPO_ROOT / "context-engine" / "service-output" / "agent-inbox")
             ),
             output_format=os.getenv("AGENT_OUTPUT_FORMAT", "markdown"),
             output_file=os.getenv("AGENT_OUTPUT_FILE"),
