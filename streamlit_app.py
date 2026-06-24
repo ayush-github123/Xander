@@ -12,12 +12,6 @@ import requests
 import json
 import subprocess
 
-# Single-file Streamlit app implementing:
-# 1) telemetry collection daemon
-# 2) aggregation engine (1m & 5m)
-# 3) simple context engine
-# 4) a rule-based agent that responds using context
-
 COLLECTOR_DB_SNAPSHOT = "/tmp/collector-metrics.db"
 
 # Default DB candidates to try for real telemetry databases

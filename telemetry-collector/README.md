@@ -85,7 +85,7 @@ Configuration is loaded from environment variables with sensible defaults:
 The collector will:
 1. Discover pods via kubelet API
 2. Map pods to containers and cgroup paths
-3. Collect metrics and save to SQLite database at `/tmp/metrics.db`
+3. Collect metrics and save to SQLite database at `/data/metrics.db` in Kubernetes deployments
 4. Emit events to stdout
 5. Handle graceful shutdown on SIGTERM/SIGINT
 
@@ -93,7 +93,7 @@ The collector will:
 
 Build Docker image:
 ```bash
-make docker-build
+make docker-build-all
 ```
 
 Deploy to a local k3s cluster through k3d:
@@ -111,9 +111,16 @@ make logs-k3
 Copy database locally:
 ```bash
 POD_NAME=$(kubectl get pods -n telemetry-system -o jsonpath='{.items[0].metadata.name}')
-kubectl cp telemetry-system/$POD_NAME:/tmp/metrics.db ./metrics.db
+kubectl cp -c collector telemetry-system/$POD_NAME:/data/metrics.db ./metrics.db
 sqlite3 ./metrics.db "SELECT COUNT(*) FROM metrics;"
 ```
+
+The Kubernetes DaemonSet runs two containers per node:
+
+- `collector` writes node-local raw metrics to `/data/metrics.db`.
+- `context-engine` reads that same DB on an interval, writes node-local artifacts under `/data/context-engine/`, persists rolling metric windows in `/data/context-engine/results.db`, and writes rule notifications to `/data/agent/inbox/`.
+
+The `/data` path is an `emptyDir` shared only by containers in the same pod, so raw metrics stay node-local.
 
 Common queries:
 ```bash

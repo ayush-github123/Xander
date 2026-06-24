@@ -21,6 +21,8 @@ from agent import Agent
 from config import AgentConfig
 from logger import StructuredLogger
 from models import AnalysisResult
+from rolling_metrics_tool import RollingMetricsTool
+from rule_notifications import RuleNotificationInbox
 
 
 def format_markdown_output(result: AnalysisResult) -> str:
@@ -249,11 +251,40 @@ def cmd_daemon(args: argparse.Namespace, config: AgentConfig, logger: Structured
     
     agent = Agent(config)
     context_dir = Path(config.context_directory)
+    notification_inbox = RuleNotificationInbox(config.rule_findings_inbox)
     
     analyzed_files = set()
+    processed_notifications = set()
     
     while True:
         try:
+            for notification_file in notification_inbox.pending():
+                if notification_file.name in processed_notifications:
+                    continue
+
+                notification = notification_inbox.load(notification_file)
+                finding_count = notification.get("finding_count", 0)
+                logger.warning(
+                    f"Rule findings notification received: {finding_count} finding(s) "
+                    f"from {notification_file.name}"
+                )
+
+                try:
+                    context = agent.context_service.load_latest_context()
+                    if context is not None:
+                        result = agent.analyze(context)
+                        output = format_markdown_output(result)
+                        output_file = context_dir.parent / "analyses" / f"analysis_rule_{result.timestamp.replace(':', '-')}.md"
+                        output_file.parent.mkdir(exist_ok=True)
+                        with open(output_file, 'w') as f:
+                            f.write(output)
+                        logger.info(f"Rule-triggered analysis saved to {output_file}")
+                    else:
+                        logger.warning("Rule notification received, but no context file is available yet")
+                finally:
+                    notification_inbox.mark_processed(notification_file)
+                    processed_notifications.add(notification_file.name)
+
             # Find all context files
             context_files = sorted(context_dir.glob("context_*.json"))
             
@@ -304,6 +335,27 @@ def cmd_watch(args: argparse.Namespace, config: AgentConfig, logger: StructuredL
     return 0
 
 
+def cmd_query_metrics(args: argparse.Namespace, config: AgentConfig, logger: StructuredLogger) -> int:
+    """Run a read-only query against context-engine rolling metrics."""
+    tool = RollingMetricsTool(args.db or config.rolling_metrics_db)
+    if args.recent_findings:
+        rows = tool.recent_findings(limit=args.limit)
+    elif args.pod:
+        namespace, pod = split_pod_ref(args.pod)
+        rows = tool.recent_windows(namespace=namespace, pod=pod, limit=args.limit)
+    else:
+        rows = tool.query(args.sql, limit=args.limit)
+    print(json.dumps(rows, indent=2))
+    return 0
+
+
+def split_pod_ref(value: str) -> tuple[str, str]:
+    if "/" in value:
+        namespace, pod = value.split("/", 1)
+        return namespace, pod
+    return "", value
+
+
 def main() -> int:
     """CLI entry point."""
     parser = argparse.ArgumentParser(
@@ -317,6 +369,10 @@ Examples:
 
   Continuous monitoring:
     python main.py daemon --poll-interval 60
+
+  Query context-engine rolling metrics:
+    python main.py query-metrics --recent-findings
+    python main.py query-metrics --pod default/orders-api
 
   Event-driven (future):
     python main.py watch --extreme-threshold 0.85
@@ -354,6 +410,33 @@ Examples:
         type=int,
         default=60,
         help="Seconds between polls (default: 60)"
+    )
+
+    # Rolling metrics query tool
+    metrics_parser = subparsers.add_parser("query-metrics", help="Query context-engine rolling metrics DB")
+    metrics_parser.add_argument(
+        "--db",
+        help="Path to context-engine results.db"
+    )
+    metrics_parser.add_argument(
+        "--sql",
+        default="SELECT * FROM rolling_metric_windows ORDER BY window_end DESC",
+        help="Read-only SELECT query"
+    )
+    metrics_parser.add_argument(
+        "--pod",
+        help="Pod ref to query as namespace/name or name"
+    )
+    metrics_parser.add_argument(
+        "--recent-findings",
+        action="store_true",
+        help="Show recent persisted rule findings"
+    )
+    metrics_parser.add_argument(
+        "--limit",
+        type=int,
+        default=20,
+        help="Maximum rows to return"
     )
     
     # Watch subcommand (scaffolding)
@@ -393,6 +476,8 @@ Examples:
         return cmd_daemon(args, config, logger)
     elif args.command == "watch":
         return cmd_watch(args, config, logger)
+    elif args.command == "query-metrics":
+        return cmd_query_metrics(args, config, logger)
     else:
         parser.print_help()
         return 1

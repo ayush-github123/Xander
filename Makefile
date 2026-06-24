@@ -1,4 +1,4 @@
-.PHONY: help up down clean status logs sync-db verify-scenario api ui aggregates context test
+.PHONY: help up down clean status logs sync-db verify-scenario api ui aggregates findings context context-service test
 
 K3_CLUSTER_NAME?=xander
 SCENARIO?=1
@@ -37,6 +37,8 @@ help:
 	@echo "  make verify-scenario - Check scenario pods and recent pod metric deltas"
 	@echo "  make api       - Run telemetry API against $(DB)"
 	@echo "  make ui        - Run Streamlit UI"
+	@echo "  make findings  - Write node-local rule findings from $(DB)"
+	@echo "  make context-service - Continuously persist context-engine node-local results"
 	@echo "  make test      - Run Go tests"
 
 up:
@@ -55,13 +57,11 @@ down:
 
 clean:
 	-$(MAKE) -C telemetry-collector clean
-	-$(MAKE) -C aggregation-engine clean
 	-$(MAKE) -C context-engine clean
 	-$(MAKE) -C telemetry-api clean
 	rm -rf .venv
 	rm -f $(DB) /tmp/collector-metrics.db
 	rm -f telemetry-api/telemetry-api
-	rm -f aggregation-engine/aggregates_*.json
 	rm -rf context-engine/context-output agent/analyses
 
 status:
@@ -89,12 +89,18 @@ ui:
 	. .venv/bin/activate && streamlit run streamlit_app.py
 
 aggregates:
-	$(MAKE) -C aggregation-engine run
+	$(MAKE) -C context-engine aggregates DB=../$(DB)
+
+findings:
+	$(MAKE) -C context-engine findings DB=../$(DB)
 
 context:
-	$(MAKE) -C context-engine run
+	$(MAKE) -C context-engine run DB=../$(DB)
+
+context-service:
+	$(MAKE) -C context-engine service DB=../$(DB)
 
 test:
 	$(MAKE) -C telemetry-collector test
-	$(MAKE) -C aggregation-engine test
+	$(MAKE) -C context-engine test
 	$(MAKE) -C telemetry-api test

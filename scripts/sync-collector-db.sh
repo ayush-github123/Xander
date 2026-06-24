@@ -26,9 +26,11 @@ first=1
 copied=0
 for pod in "${pods[@]}"; do
   pod_db="$tmpdir/$pod.db"
-  if ! kubectl cp "$NAMESPACE/$pod:/tmp/metrics.db" "$pod_db" >/dev/null; then
-    echo "Skipping $pod: could not copy /tmp/metrics.db" >&2
-    continue
+  if ! kubectl cp -c collector "$NAMESPACE/$pod:/data/metrics.db" "$pod_db" >/dev/null; then
+    if ! kubectl cp -c collector "$NAMESPACE/$pod:/tmp/metrics.db" "$pod_db" >/dev/null; then
+      echo "Skipping $pod: could not copy /data/metrics.db or /tmp/metrics.db" >&2
+      continue
+    fi
   fi
 
   if [ "$first" -eq 1 ]; then

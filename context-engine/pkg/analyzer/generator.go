@@ -391,33 +391,42 @@ func (cg *ContextGenerator) parseStatistics(data interface{}) models.MetricStati
 	stats := models.MetricStatistics{}
 
 	if statsMap, ok := data.(map[string]interface{}); ok {
-		if v, ok := statsMap["Avg"].(float64); ok {
+		if v, ok := floatField(statsMap, "Avg", "avg"); ok {
 			stats.Avg = v
 		}
-		if v, ok := statsMap["Min"].(float64); ok {
+		if v, ok := floatField(statsMap, "Min", "min"); ok {
 			stats.Min = v
 		}
-		if v, ok := statsMap["Max"].(float64); ok {
+		if v, ok := floatField(statsMap, "Max", "max"); ok {
 			stats.Max = v
 		}
-		if v, ok := statsMap["P95"].(float64); ok {
+		if v, ok := floatField(statsMap, "P95", "p95"); ok {
 			stats.P95 = v
 		}
-		if v, ok := statsMap["MovingAvg"].(float64); ok {
+		if v, ok := floatField(statsMap, "MovingAvg", "moving_avg"); ok {
 			stats.MovingAvg = v
 		}
-		if v, ok := statsMap["Slope"].(float64); ok {
+		if v, ok := floatField(statsMap, "Slope", "slope"); ok {
 			stats.Slope = v
 		}
-		if v, ok := statsMap["RateOfChange"].(float64); ok {
+		if v, ok := floatField(statsMap, "RateOfChange", "rate_of_change"); ok {
 			stats.RateOfChange = v
 		}
-		if v, ok := statsMap["BaselineDeviation"].(float64); ok {
+		if v, ok := floatField(statsMap, "BaselineDeviation", "baseline_deviation"); ok {
 			stats.BaselineDeviation = v
 		}
 	}
 
 	return stats
+}
+
+func floatField(values map[string]interface{}, names ...string) (float64, bool) {
+	for _, name := range names {
+		if value, ok := values[name].(float64); ok {
+			return value, true
+		}
+	}
+	return 0, false
 }
 
 func (cg *ContextGenerator) generateContainerContext(
@@ -675,15 +684,15 @@ func (cg *ContextGenerator) SaveContext(ctx *models.GlobalContext, outputDir str
 // CompactContext creates a lightweight version for LLM agents (removes aggregates, only at-risk containers)
 func (cg *ContextGenerator) CompactContext(ctx *models.GlobalContext) *models.GlobalContext {
 	compact := &models.GlobalContext{
-		Timestamp:         ctx.Timestamp,
-		TotalContainers:   ctx.TotalContainers,
-		ContainersAtRisk:  ctx.ContainersAtRisk,
-		CriticalAnomalies: ctx.CriticalAnomalies,
-		Containers:        make(map[string]models.ContainerContext),
-		ClusterStats:      cg.compactClusterStats(ctx.ClusterStats),
-		SystemWideTrends:  ctx.SystemWideTrends,
+		Timestamp:          ctx.Timestamp,
+		TotalContainers:    ctx.TotalContainers,
+		ContainersAtRisk:   ctx.ContainersAtRisk,
+		CriticalAnomalies:  ctx.CriticalAnomalies,
+		Containers:         make(map[string]models.ContainerContext),
+		ClusterStats:       cg.compactClusterStats(ctx.ClusterStats),
+		SystemWideTrends:   ctx.SystemWideTrends,
 		ScenarioDetections: ctx.ScenarioDetections,
-		Recommendations:   ctx.Recommendations,
+		Recommendations:    ctx.Recommendations,
 	}
 
 	// Only include high/critical risk containers
