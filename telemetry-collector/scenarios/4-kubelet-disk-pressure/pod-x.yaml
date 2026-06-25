@@ -24,7 +24,7 @@ spec:
       i=0
       while true; do
         USAGE=$(df /tmp/filler | awk 'NR==2 {print $5}' | sed 's/%//')
-        if [ "$USAGE" -gt 85 ]; then
+        if [ "$USAGE" -gt 75 ]; then
           echo "Disk is at $USAGE%. Pausing to maintain pressure without crashing the node..."
           sleep 60
         else
