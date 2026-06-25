@@ -154,6 +154,21 @@ deploy_scenario() {
   done
 }
 
+build_and_import_scenario_images() {
+  case "$SCENARIO" in
+    2)
+      log "Building scenario image: xander-scenario-fio:latest"
+      docker build -t xander-scenario-fio:latest -f "$ROOT_DIR/telemetry-collector/scenarios/images/fio/Dockerfile" "$ROOT_DIR/telemetry-collector/scenarios/images/fio"
+      k3d image import xander-scenario-fio:latest --cluster "$K3_CLUSTER_NAME"
+      ;;
+    4)
+      log "Building scenario image: xander-scenario-disk-filler:latest"
+      docker build -t xander-scenario-disk-filler:latest -f "$ROOT_DIR/telemetry-collector/scenarios/images/disk-filler/Dockerfile" "$ROOT_DIR/telemetry-collector/scenarios/images/disk-filler"
+      k3d image import xander-scenario-disk-filler:latest --cluster "$K3_CLUSTER_NAME"
+      ;;
+  esac
+}
+
 deploy_collector() {
   log "Building and deploying telemetry collector with context-engine container"
   make -C "$ROOT_DIR/telemetry-collector" docker-build
@@ -169,6 +184,7 @@ main() {
   setup_python_env
   download_go_modules
   ensure_k3_cluster
+  build_and_import_scenario_images
   deploy_scenario
   deploy_collector
 

@@ -9,12 +9,12 @@ metadata:
 spec:
   containers:
   - name: fio-writer
-    image: alpine:latest
+    image: xander-scenario-fio:latest
+    imagePullPolicy: IfNotPresent
     command: ["/bin/sh", "-c"]
     args:
     - |
       set -eu
-      apk add --no-cache fio
       touch /tmp/writer-ready
       echo "Starting heavy sequential writes..."
       fio --name=writer --directory=/data --rw=write --bs=1M --size=2G --numjobs=1 --time_based --runtime=3600 --group_reporting

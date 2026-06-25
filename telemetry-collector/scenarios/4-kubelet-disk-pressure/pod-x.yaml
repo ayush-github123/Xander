@@ -9,12 +9,12 @@ metadata:
 spec:
   containers:
   - name: filler
-    image: alpine:latest
+    image: xander-scenario-disk-filler:latest
+    imagePullPolicy: IfNotPresent
     command: ["/bin/sh", "-c"]
     args:
     - |
       set -eu
-      apk add --no-cache util-linux
       echo "Starting safe disk pressure simulation..."
       echo "We will use 'fallocate' to quickly allocate space without writing to disk (saves SSD wear)."
       echo "We will stop at 85% usage to avoid completely breaking the local host."

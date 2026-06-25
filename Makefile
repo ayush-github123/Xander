@@ -1,4 +1,4 @@
-.PHONY: help up down clean status logs sync-db verify-scenario api ui aggregates findings context context-service test
+.PHONY: help up down clean status logs sync-db verify-scenario scenario-images api ui aggregates findings context context-service test
 
 K3_CLUSTER_NAME?=xander
 SCENARIO?=1
@@ -35,6 +35,7 @@ help:
 	@echo "  make logs      - Stream collector logs"
 	@echo "  make sync-db   - Copy collector metrics.db to $(DB)"
 	@echo "  make verify-scenario - Check scenario pods and recent pod metric deltas"
+	@echo "  make scenario-images - Build/import package-ready scenario images for SCENARIO=2 or 4"
 	@echo "  make api       - Run telemetry API against $(DB)"
 	@echo "  make ui        - Run Streamlit UI"
 	@echo "  make findings  - Write node-local rule findings from $(DB)"
@@ -81,6 +82,17 @@ verify-scenario: sync-db
 	@echo ""
 	@echo "Recent pod metric deltas from $(DB):"
 	@sqlite3 -header -column "$(DB)" "SELECT pod_namespace, pod_name, COUNT(*) AS rows, ROUND((MAX(diskio_write_bytes)-MIN(diskio_write_bytes))/1048576.0, 2) AS disk_write_mib_delta, ROUND((MAX(diskio_read_bytes)-MIN(diskio_read_bytes))/1048576.0, 2) AS disk_read_mib_delta, ROUND((MAX(network_tx_bytes)-MIN(network_tx_bytes))/1024.0, 2) AS net_tx_kib_delta FROM metrics WHERE datetime(timestamp) >= datetime('now', '-5 minutes') AND pod_name IN ($(shell printf "'%s'," $(SCENARIO_PODS) | sed 's/,$$//')) GROUP BY pod_namespace, pod_name ORDER BY disk_write_mib_delta DESC;"
+
+scenario-images:
+	@if [ "$(SCENARIO)" = "2" ]; then \
+		docker build -t xander-scenario-fio:latest -f telemetry-collector/scenarios/images/fio/Dockerfile telemetry-collector/scenarios/images/fio; \
+		k3d image import xander-scenario-fio:latest --cluster $(K3_CLUSTER_NAME); \
+	elif [ "$(SCENARIO)" = "4" ]; then \
+		docker build -t xander-scenario-disk-filler:latest -f telemetry-collector/scenarios/images/disk-filler/Dockerfile telemetry-collector/scenarios/images/disk-filler; \
+		k3d image import xander-scenario-disk-filler:latest --cluster $(K3_CLUSTER_NAME); \
+	else \
+		echo "SCENARIO=$(SCENARIO) does not need a custom scenario image"; \
+	fi
 
 api:
 	$(MAKE) -C telemetry-api run DB=../$(DB)
