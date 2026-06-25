@@ -9,12 +9,12 @@ metadata:
 spec:
   containers:
   - name: fio-reader
-    image: alpine:latest
+    image: xander-scenario-fio:latest
+    imagePullPolicy: IfNotPresent
     command: ["/bin/sh", "-c"]
     args:
     - |
       set -eu
-      apk add --no-cache fio
       echo "Preparing test file for reads..."
       fio --name=prep --directory=/data --rw=write --bs=1M --size=1G --numjobs=1
       touch /tmp/reader-ready

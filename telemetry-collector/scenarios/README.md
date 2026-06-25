@@ -20,6 +20,18 @@ Pod X maliciously (but safely) fills up the node's ephemeral storage using `fall
 
 ## How to use
 
+Scenarios 2 and 4 use custom images so packages are installed at image build time instead of inside running pods:
+
+- `xander-scenario-fio:latest` includes `fio`
+- `xander-scenario-disk-filler:latest` includes `util-linux` / `fallocate`
+
+For the local k3d workflow, build and import them with:
+
+```bash
+make scenario-images SCENARIO=2
+make scenario-images SCENARIO=4
+```
+
 Navigate into each directory and apply the manifests:
 ```bash
 kubectl apply -f pod-x.yaml
